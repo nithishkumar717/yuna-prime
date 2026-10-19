@@ -1,0 +1,3 @@
+security:
+  panic_mode: false
+  max_warnings: 3

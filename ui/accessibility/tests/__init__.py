@@ -1,0 +1,1 @@
+"""Tests for ui/accessibility - v7.6.0 Accessibility & Responsive Layouts."""

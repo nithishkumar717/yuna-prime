@@ -1,0 +1,45 @@
+# --- Security & Secrets (NEVER PUSH) ---
+.env
+.env.*
+!.env.example
+token
+*.pem
+*.key
+*.cert
+
+# --- Databases & Local Storage ---
+db/
+data/
+*.db
+*.sqlite
+*.sqlite3
+assets/profiles/
+
+# --- Logs & Runtime Output ---
+logs/
+*.log
+
+# --- Large Backups & Archives ---
+backups/
+*.zip
+*.tar.gz
+*.7z
+*.exe
+
+# --- Dependencies & Python Cache ---
+__pycache__/
+*/__pycache__/
+*/*/__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.idea/
+.vscode/
+
+# --- Temporary Test Scripts & Agent Scratches ---
+scratch/
+scratch_*
+test_*.png
+test_*.gif
+.agents/

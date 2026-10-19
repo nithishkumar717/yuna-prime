@@ -1,0 +1,11 @@
+from enum import Enum
+
+
+class CacheTTL(Enum):
+    GUILD_SETTINGS = 1800
+    MEMBER_PROFILE = 600
+    PERMISSION = 300
+    AI_RESPONSE = 900
+    DASHBOARD_SESSION = 3600
+    MODERATION_STATE = 300
+    DEFAULT = 300

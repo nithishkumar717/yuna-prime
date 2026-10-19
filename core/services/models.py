@@ -1,0 +1,17 @@
+from enum import Enum
+
+
+class ServiceState(Enum):
+    INITIALIZING = "INITIALIZING"
+    STARTING = "STARTING"
+    READY = "READY"
+    DEGRADED = "DEGRADED"
+    STOPPING = "STOPPING"
+    STOPPED = "STOPPED"
+    FAILED = "FAILED"
+
+
+class ServiceCategory(Enum):
+    INFRASTRUCTURE = "INFRASTRUCTURE"
+    DOMAIN = "DOMAIN"
+    APPLICATION = "APPLICATION"
