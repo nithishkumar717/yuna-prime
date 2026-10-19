@@ -24,6 +24,7 @@ backups/
 *.zip
 *.tar.gz
 *.7z
+*.rar
 *.exe
 
 # --- Dependencies & Python Cache ---
