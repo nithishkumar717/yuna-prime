@@ -21,10 +21,11 @@ import subprocess
 from datetime import datetime, timezone
 
 import discord
+from discord import app_commands
 from discord.ext import commands
 from aiohttp import web
 
-from utils.config import OWNER_IDS
+from utils.config import OWNER_IDS, PRIMARY_BOT_OWNER, GLOBAL_OWNER_IDS
 from utils.git_auth import (
     get_auth_remote_url,
     get_clean_remote_url,
@@ -32,6 +33,20 @@ from utils.git_auth import (
     run_git_command,
     ensure_git_remote_configured,
 )
+
+
+def is_bot_owner():
+    """Robust owner check verifying PRIMARY_BOT_OWNER, GLOBAL_OWNER_IDS, OWNER_IDS, or bot.is_owner()."""
+    async def predicate(ctx: commands.Context) -> bool:
+        uid = ctx.author.id
+        if (uid in GLOBAL_OWNER_IDS) or (uid == PRIMARY_BOT_OWNER) or (uid in OWNER_IDS):
+            return True
+        try:
+            return await ctx.bot.is_owner(ctx.author)
+        except Exception:
+            return False
+    return commands.check(predicate)
+
 
 # ─── Config (from .env) ──────────────────────────────────────────────────────
 WEBHOOK_SECRET  = os.getenv("GITHUB_WEBHOOK_SECRET", "")   # GitHub webhook secret
@@ -246,24 +261,29 @@ def _restart_bot():
     except Exception:
         pass
 
-    # Close all open non-std file descriptors (>= 3) so child process doesn't inherit listening sockets (port 2033, 8080)
+    # Close all open non-std file descriptors (>= 3) on POSIX so child process doesn't inherit listening sockets
     try:
-        if hasattr(os, 'closerange'):
-            os.closerange(3, 4096)
-        else:
-            for fd in range(3, 1024):
-                try:
-                    os.close(fd)
-                except OSError:
-                    pass
+        if sys.platform != "win32":
+            if hasattr(os, 'closerange'):
+                os.closerange(3, 4096)
+            else:
+                for fd in range(3, 1024):
+                    try:
+                        os.close(fd)
+                    except OSError:
+                        pass
     except Exception:
         pass
 
     try:
         python = sys.executable
-        os.execl(python, python, *sys.argv)
+        if sys.platform == "win32":
+            subprocess.Popen([python] + sys.argv, cwd=os.getcwd())
+            os._exit(0)
+        else:
+            os.execl(python, python, *sys.argv)
     except Exception as e:
-        print(f"[GitPull] os.execl failed: {e}. Falling back to SIGTERM.")
+        print(f"[GitPull] Process restart failed: {e}. Falling back to SIGTERM.")
         try:
             os.kill(os.getpid(), signal.SIGTERM)
         except Exception:
@@ -488,13 +508,46 @@ class GitPull(commands.Cog):
 
     # ─── Discord Commands ─────────────────────────────────────────────────────
 
+    @commands.group(
+        name="git",
+        invoke_without_command=True,
+        hidden=True,
+        help="Owner-only: Git synchronization engine ($git pull, $git status)."
+    )
+    @is_bot_owner()
+    async def git_group(self, ctx: commands.Context, *, sub: str = ""):
+        """Allow $git pull or $git status or $git by itself."""
+        sub_clean = sub.strip().lower()
+        if sub_clean.startswith("pull"):
+            parts = sub.strip().split(maxsplit=1)
+            flag = parts[1] if len(parts) > 1 else ""
+            return await self.gitpull_cmd(ctx, flag=flag)
+        elif sub_clean in ["status", "info", "version"]:
+            return await self.gitstatus_cmd(ctx)
+        elif not sub_clean:
+            return await self.gitstatus_cmd(ctx)
+        else:
+            return await self.gitpull_cmd(ctx, flag=sub.strip())
+
+    @git_group.command(name="pull", aliases=["update"])
+    @is_bot_owner()
+    async def git_pull_sub(self, ctx: commands.Context, flag: str = ""):
+        """Owner-only: $git pull [check]"""
+        return await self.gitpull_cmd(ctx, flag=flag)
+
+    @git_group.command(name="status", aliases=["info", "version"])
+    @is_bot_owner()
+    async def git_status_sub(self, ctx: commands.Context):
+        """Owner-only: $git status"""
+        return await self.gitstatus_cmd(ctx)
+
     @commands.command(
         name="gitpull",
-        aliases=["git-pull", "gitupdate", "gupdate"],
+        aliases=["git-pull", "gpull", "gitupdate", "gupdate"],
         hidden=True,
         help="Owner-only: Pull latest code from GitHub and restart the bot."
     )
-    @commands.is_owner()
+    @is_bot_owner()
     async def gitpull_cmd(self, ctx: commands.Context, flag: str = ""):
         """Owner-only: run git pull and restart."""
         is_check = flag.lower() in ["check", "status", "info", "diff", "preview"]
@@ -712,9 +765,19 @@ class GitPull(commands.Cog):
                 print(f"[GitPull] Could not record deploy history: {e}")
 
     @gitpull_cmd.error
+    @git_group.error
     async def gitpull_cmd_error(self, ctx: commands.Context, error: Exception):
         if isinstance(error, (commands.NotOwner, commands.CheckFailure)):
-            return  # Silently ignore non-owners for maximum privacy and secrecy
+            embed = discord.Embed(
+                title="Access Denied",
+                description="<:Yuna_cross:1227866668152393789> Only the **Bot Owner** can use this command!",
+                color=COLOR_ERR
+            )
+            try:
+                await ctx.send(embed=embed, delete_after=6)
+            except Exception:
+                pass
+            return
         embed = discord.Embed(
             title="Command Error",
             description=f"<:Yuna_cross:1227866668152393789> An error occurred: `{error}`",
@@ -725,13 +788,37 @@ class GitPull(commands.Cog):
         except Exception:
             pass
 
+    @app_commands.command(
+        name="gitpull",
+        description="[Bot Owner Only] Pull latest code from GitHub and restart the bot"
+    )
+    @app_commands.describe(flag="Optional: set to 'check' or 'preview' to inspect before deploy")
+    async def gitpull_slash(self, interaction: discord.Interaction, flag: str = ""):
+        """Owner-only slash command: run git pull and restart."""
+        uid = interaction.user.id
+        is_owner = (uid in GLOBAL_OWNER_IDS) or (uid == PRIMARY_BOT_OWNER) or (uid in OWNER_IDS)
+        if not is_owner:
+            try:
+                is_owner = await self.bot.is_owner(interaction.user)
+            except Exception:
+                is_owner = False
+        if not is_owner:
+            return await interaction.response.send_message(
+                "<:Yuna_cross:1227866668152393789> Only the **Bot Owner** can use this command!",
+                ephemeral=True
+            )
+
+        await interaction.response.defer(ephemeral=False)
+        ctx = await self.bot.get_context(interaction)
+        await self.gitpull_cmd(ctx, flag=flag)
+
     @commands.command(
         name="gitstatus",
-        aliases=["gitinfo", "version"],
+        aliases=["gitinfo", "gstatus", "version"],
         hidden=True,
         help="Owner-only: Show current deployed git commit info."
     )
-    @commands.is_owner()
+    @is_bot_owner()
     async def gitstatus_cmd(self, ctx: commands.Context):
         """Owner-only: show current git commit."""
         status = await _get_git_status_async()
@@ -795,7 +882,7 @@ class GitPull(commands.Cog):
         hidden=True,
         help="Owner-only: Check if the GitHub webhook server is running."
     )
-    @commands.is_owner()
+    @is_bot_owner()
     async def webhookstatus_cmd(self, ctx: commands.Context):
         """Owner-only: check webhook server status."""
         if self._webhook_runner:
@@ -838,7 +925,7 @@ class GitPull(commands.Cog):
         hidden=True,
         help="Owner-only: Run automated diagnostics on all system optimizations."
     )
-    @commands.is_owner()
+    @is_bot_owner()
     async def systemcheck_cmd(self, ctx: commands.Context):
         """Owner-only: run automated live diagnostics on audio buffer, autoplay, prefix, db, security."""
         msg = await ctx.send("<a:loading:1554957482248380416> Running automated live diagnostics on all subsystems...")
