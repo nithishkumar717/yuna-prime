@@ -55,8 +55,8 @@ GIT_BRANCH      = os.getenv("GIT_BRANCH", "main")           # Branch to pull fro
 GIT_LOG_CHANNEL = int(os.getenv("GIT_LOG_CHANNEL_ID", "0")) # Optional: Discord channel ID for deploy logs
 # ─────────────────────────────────────────────────────────────────────────────
 
-TICK  = "<a:tick:1558726958802800660>"
-CROSS = "<:Yuna_cross:1227866668152393789>"
+TICK  = "<a:tick:1562100631605350441>"
+CROSS = "<:cross:1562101096686686218>"
 COLOR_DARK = 0x2b2d31
 COLOR_OK   = 0x2b2d31
 COLOR_ERR  = 0x2b2d31
