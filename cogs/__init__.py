@@ -20,16 +20,32 @@ from .yuna_commands.owner import Owner, Badges
 from .yuna_commands.gitpull import GitPull
 from .yuna_commands.backup import ServerBackup
 from .yuna_commands.ping import Ping
+from .yuna_commands.welcome import Welcomer
+from .yuna_commands.fastgreet import FastGreet
+from .yuna_commands.joindm import joindm
+from .yuna_commands.stickymessage import StickyMessage
+from .yuna_commands.autorole import AutoRole
+from .yuna_commands.autoresponder import AutoResponder
+from .yuna_commands.autoreact import AutoReaction
 
 # Extra Help / Guide Cogs
 from .yuna_extra_commands.antinuke import _antinuke
-from .yuna_extra_commands.automod import _automod 
+from .yuna_extra_commands.automod import _automod
 from .yuna_extra_commands.moderation import _moderation
+from .yuna_extra_commands.welcome import _welcome
+from .yuna_extra_commands.joindm import _joindm
+from .yuna_extra_commands.sticky import _sticky
 
 # Events
 from .yuna_events.Errors import Errors
 from .yuna_events.autoblacklist import AutoBlacklist
 from .yuna_events.on_guild import Guild
+from .yuna_events.greet import greet
+from .yuna_events.auto import Autorole as AutoroleEvent
+from .yuna_events.autorole import Autorole2
+from .yuna_events.react import React
+from .yuna_events.autoreact import AutoReactListener
+from .yuna_events.stickymessage import StickyMessageListener
 
 # Antinuke Events
 from .yuna_antinuke.anti_member_update import AntiMemberUpdate
@@ -87,11 +103,15 @@ async def setup(bot: BotBase):
         Automod, Nightmode, Emergency, SecurityDashboard, AuditTools,
         ServerLogs, Blacklist, Owner, Badges, GitPull, ServerBackup, Ping,
         
+        # Server Automation & Greeting Commands
+        Welcomer, FastGreet, joindm, StickyMessage, AutoRole, AutoResponder, AutoReaction,
+        
         # Guide Helpers
-        _antinuke, _automod, _moderation,
+        _antinuke, _automod, _moderation, _welcome, _joindm, _sticky,
         
         # Events & Handlers
         Errors, AutoBlacklist, Guild,
+        greet, AutoroleEvent, Autorole2, React, AutoReactListener, StickyMessageListener,
         
         # Antinuke Real-time Listeners
         AntiMemberUpdate, AntiBan, AntiBotAdd, AntiChannelCreate, AntiChannelDelete,
@@ -123,4 +143,4 @@ async def setup(bot: BotBase):
             print(Fore.RED + Style.BRIGHT + f"[SUPREME COG WARNING] Skipped {cog_name}: {e}")
             failed += 1
 
-    print(Fore.CYAN + Style.BRIGHT + f"[YUNA SUPREME] Security Modules Processed: ({loaded} loaded, {failed} failed).")
+    print(Fore.CYAN + Style.BRIGHT + f"[YUNA SUPREME] Modules Processed: ({loaded} loaded, {failed} failed).")

@@ -5,6 +5,7 @@ load_dotenv()
 
 TOKEN = os.environ.get("TOKEN") or os.environ.get("DISCORD_TOKEN")
 NAME = "YUNΛ"
+BRAND_NAME = os.environ.get("brand_name", NAME)
 server = "https://discord.gg/YzHCx5yQXv"
 ch = "https://discord.gg/YzHCx5yQXv"
 
@@ -48,6 +49,8 @@ def is_sibling_bot(user_or_id) -> bool:
 
 BotName = "YUNΛ"
 serverLink = "https://discord.gg/YzHCx5yQXv"
+websiteLink = "https://zyuna.vercel.app"
+website = websiteLink
 
 # ==============================================================================
 # DATABASE ISOLATION (YUNA PRIME DEDICATED DATABASE)
