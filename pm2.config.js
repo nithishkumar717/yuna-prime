@@ -2,6 +2,7 @@ module.exports = {
   apps: [
     {
       name: "yuna-supreme",
+      cwd: __dirname,
       script: "app.py",
       interpreter: "python3",
       env: {

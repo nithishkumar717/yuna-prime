@@ -73,7 +73,7 @@ def _redact_git_credentials(output: str) -> str:
 def _verify_signature(body: bytes, signature_header: str) -> bool:
     """Verify GitHub HMAC-SHA256 webhook signature."""
     if not WEBHOOK_SECRET:
-        return True  # No secret configured — accept all (not recommended for prod)
+        return False
     if not signature_header or not signature_header.startswith("sha256="):
         return False
     expected = hmac.new(
@@ -84,19 +84,49 @@ def _verify_signature(body: bytes, signature_header: str) -> bool:
     return hmac.compare_digest(f"sha256={expected}", signature_header)
 
 
-def _run_git_pull() -> tuple[bool, str]:
-    """Fast-forward only from the configured branch; never discard local work."""
+def _run_git_pull() -> tuple[bool, str, bool]:
+    """Pull only a clean fast-forward update from public origin; never discard local work."""
     try:
         root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         if not GIT_BRANCH or any(ch not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._/-" for ch in GIT_BRANCH) or GIT_BRANCH.startswith("-"):
-            return False, "Invalid GIT_BRANCH configuration."
+            return False, "Invalid GIT_BRANCH configuration.", False
+        branch_code, branch = run_git_command(["branch", "--show-current"], cwd=root_dir, timeout=10)
+        if branch_code != 0:
+            return False, f"Could not inspect current Git branch: {branch}", False
+        if branch.strip() != GIT_BRANCH:
+            return False, f"Update stopped: checked out branch is '{branch.strip() or 'unknown'}', expected '{GIT_BRANCH}'.", False
+        status_code, status = run_git_command(["status", "--porcelain", "--untracked-files=normal"], cwd=root_dir, timeout=10)
+        if status_code != 0:
+            return False, f"Could not inspect the working tree: {status}", False
+        if status.strip():
+            return False, "Update stopped: local tracked or untracked changes are present. Commit or back them up, then retry.", False
         ok, msg = ensure_git_remote_configured(root_dir)
         if not ok:
-            return False, msg
-        code, out = run_git_command(["git", "pull", "--ff-only", "origin", GIT_BRANCH], cwd=root_dir, timeout=120)
-        return code == 0, out or ("Already up to date." if code == 0 else "git pull failed without diagnostic output.")
+            return False, msg, False
+        old_code, old_head = run_git_command(["rev-parse", "HEAD"], cwd=root_dir, timeout=10)
+        if old_code != 0:
+            return False, f"Could not inspect current commit: {old_head}", False
+        fetch_code, fetch_output = run_git_command(
+            ["fetch", "--no-tags", "origin", f"refs/heads/{GIT_BRANCH}"],
+            cwd=root_dir,
+            timeout=120,
+        )
+        if fetch_code != 0:
+            return False, f"Could not fetch public origin/{GIT_BRANCH}: {fetch_output}", False
+        remote_code, remote_head = run_git_command(["rev-parse", "FETCH_HEAD"], cwd=root_dir, timeout=10)
+        if remote_code != 0:
+            return False, f"Could not inspect fetched commit: {remote_head}", False
+        if old_head.strip() == remote_head.strip():
+            return True, "Already up to date.", False
+        merge_code, merge_output = run_git_command(["merge", "--ff-only", "FETCH_HEAD"], cwd=root_dir, timeout=120)
+        if merge_code != 0:
+            return False, f"Update stopped: Git could not fast-forward safely. No reset or force-pull was run. {merge_output}", False
+        new_code, new_head = run_git_command(["rev-parse", "HEAD"], cwd=root_dir, timeout=10)
+        if new_code != 0 or new_head.strip() == old_head.strip():
+            return False, f"Git reported a pull but the checked-out commit did not advance: {new_head}", False
+        return True, merge_output or f"Updated {old_head.strip()[:12]} to {new_head.strip()[:12]}.", True
     except Exception as e:
-        return False, f"git pull failed: {e}"
+        return False, f"git pull failed: {e}", False
 
 
 def _check_remote_update() -> tuple[bool, str]:
@@ -113,6 +143,9 @@ def _check_remote_update() -> tuple[bool, str]:
             return False, f"Could not inspect working tree: {status}"
         if status.strip():
             return False, "Watchdog skipped: working tree has local changes."
+        remote_ok, remote_message = ensure_git_remote_configured(root_dir)
+        if not remote_ok:
+            return False, f"Watchdog skipped: {remote_message}"
         local_code, local = run_git_command(["git", "rev-parse", "HEAD"], cwd=root_dir, timeout=5)
         if local_code != 0:
             return False, f"Could not inspect local commit: {local}"
@@ -126,6 +159,16 @@ def _check_remote_update() -> tuple[bool, str]:
         remote_hash = remote.split()[0] if remote.split() else ""
         if not remote_hash:
             return False, f"No origin/{GIT_BRANCH} branch was found."
+        ancestor_code, _ = run_git_command(
+            ["git", "merge-base", "--is-ancestor", remote_hash, local.strip()], cwd=root_dir, timeout=5
+        )
+        if ancestor_code == 0:
+            return False, ""
+        ancestor_code, _ = run_git_command(
+            ["git", "merge-base", "--is-ancestor", local.strip(), remote_hash], cwd=root_dir, timeout=5
+        )
+        if ancestor_code != 0:
+            return False, f"Watchdog stopped: local {GIT_BRANCH} and origin/{GIT_BRANCH} have diverged; reconcile them manually."
         return local.strip() != remote_hash, ""
     except Exception as exc:
         return False, f"Watchdog check failed: {exc}"
@@ -173,7 +216,7 @@ def _get_upgrade_telemetry() -> dict:
     try:
         ensure_git_remote_configured(root_dir)
         run_git_command(
-            ["git", "fetch", "origin", f"+refs/heads/{GIT_BRANCH}:refs/remotes/origin/{GIT_BRANCH}"],
+            ["git", "fetch", "origin", f"refs/heads/{GIT_BRANCH}:refs/remotes/origin/{GIT_BRANCH}"],
             cwd=root_dir,
             timeout=15
         )
@@ -386,7 +429,7 @@ class GitPull(commands.Cog):
         if self._webhook_runner:
             await self._webhook_runner.cleanup()
 
-    async def _pull_locked(self) -> tuple[bool, str]:
+    async def _pull_locked(self) -> tuple[bool, str, bool]:
         """Serialize all pull triggers and keep blocking Git work off the event loop."""
         async with self._git_lock:
             return await asyncio.to_thread(_run_git_pull)
@@ -405,12 +448,14 @@ class GitPull(commands.Cog):
                         continue
                     if not update_available:
                         continue
-                    success, output = await asyncio.to_thread(_run_git_pull)
-                if success:
+                    success, output, applied = await asyncio.to_thread(_run_git_pull)
+                if success and applied:
                     print(f"[GitPull Watchdog] Updated from origin/{GIT_BRANCH}; restarting bot.", flush=True)
                     await self._send_deploy_log(True, output, triggered_by="Git Watchdog")
                     asyncio.create_task(self._delayed_restart(3))
                     return
+                if success:
+                    continue
                 print(f"[GitPull Watchdog] Automatic pull failed: {_redact_git_credentials(output)}", flush=True)
                 await self._send_deploy_log(False, _redact_git_credentials(output), triggered_by="Git Watchdog")
             except asyncio.CancelledError:
@@ -463,7 +508,7 @@ class GitPull(commands.Cog):
         print(f"[GitPull] ✅ GitHub push webhook received — starting git pull...")
 
         # 4. Run git pull in executor (non-blocking)
-        success, output = await self._pull_locked()
+        success, output, applied = await self._pull_locked()
 
         # 5. Log to Discord channel if configured
         await self._send_deploy_log(success, output, triggered_by="GitHub Push")
@@ -476,19 +521,21 @@ class GitPull(commands.Cog):
                 success=success,
                 output=output,
                 triggered_by="GitHub Push Webhook",
-                restarted=success,
+                restarted=success and applied,
                 git_status=status
             )
         except Exception as e:
             print(f"[GitPull] Could not record webhook deploy history: {e}")
 
-        if success:
+        if success and applied:
             print(f"[GitPull] ✅ git pull succeeded:\n{output}")
             print("[GitPull] 🔄 Sending SIGTERM — Pterodactyl will auto-restart...")
             # Small delay so the HTTP response can be sent back to GitHub first
             asyncio.create_task(self._delayed_restart(3))
             return web.Response(status=200, text="Pull successful. Restarting bot...")
         else:
+            if success:
+                return web.Response(status=200, text="Already up to date. No restart needed.")
             print(f"[GitPull] ❌ git pull failed:\n{output}")
             return web.Response(status=500, text=f"Pull failed: {output}")
 
@@ -695,11 +742,29 @@ class GitPull(commands.Cog):
             msg = await ctx.author.send(embed=init_embed)
 
         # Run in executor
-        success, output = await self._pull_locked()
+        success, output, applied = await self._pull_locked()
 
         output_display = output[:900] + "..." if len(output) > 900 else output
 
-        if success:
+        if success and not applied:
+            embed = discord.Embed(
+                title="✅ Already Up To Date",
+                description=f"The checkout is already current with origin/{GIT_BRANCH}. No files changed and the bot was not restarted.",
+                color=0x2ECC71,
+                timestamp=datetime.now(timezone.utc)
+            )
+            if bot_avatar:
+                embed.set_author(name="YUNΛ SYSTEM ORCHESTRATOR", icon_url=bot_avatar)
+            try:
+                await msg.edit(embed=embed, view=None)
+            except Exception:
+                try:
+                    await ctx.author.send(embed=embed)
+                except Exception:
+                    pass
+            return
+
+        if success and applied:
             status = await _get_git_status_async()
             embed = discord.Embed(
                 title="✅ Core Deployment Successful",
