@@ -120,7 +120,7 @@ async def setup(bot: BotBase):
             print(Fore.GREEN + Style.BRIGHT + f"[SUPREME COG] Loaded: {cog_name}")
             loaded += 1
         except Exception as e:
-            print(Fore.RED + Style.BRIGHT + f"⚠️ [SUPREME COG WARNING] Skipped {cog_name}: {e}")
+            print(Fore.RED + Style.BRIGHT + f"[SUPREME COG WARNING] Skipped {cog_name}: {e}")
             failed += 1
 
     print(Fore.CYAN + Style.BRIGHT + f"[YUNA SUPREME] Security Modules Processed: ({loaded} loaded, {failed} failed).")

@@ -234,14 +234,11 @@ async def _get_upgrade_telemetry_async() -> dict:
 def _restart_bot():
     """Restart the bot process in-place using os.execl (preserves container state on Pterodactyl/Linux/Windows)."""
     try:
-        from core import BotBase
-        bot = BotBase.get_instance()
-        if bot:
-            music_cog = bot.get_cog("music")
-            if music_cog and hasattr(music_cog, "save_all_playback_states"):
-                music_cog.save_all_playback_states()
-    except Exception as e:
-        print(f"[GitPull] Failed to save playback state: {e}")
+        from core.antinuke_v2.router import v2_engine_router
+        if v2_engine_router and hasattr(v2_engine_router, "shutdown"):
+            v2_engine_router.shutdown()
+    except Exception:
+        pass
 
     try:
         from core.dashboard.utils import save_sessions_to_disk

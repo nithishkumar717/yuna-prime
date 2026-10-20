@@ -9,24 +9,6 @@ class AuditTools(commands.Cog):
         self.bot = bot
         self.color = 0x2B2D31
 
-    @commands.hybrid_command(name="nickname", aliases=["nick"], help="Change a member's nickname.")
-    @blacklist_check()
-    @ignore_check()
-    @commands.has_permissions(manage_nicknames=True)
-    @commands.cooldown(1, 3, commands.BucketType.user)
-    async def nickname(self, ctx: commands.Context, member: discord.Member, *, new_nick: str = None):
-        if member == ctx.guild.owner:
-            return await ctx.reply("❌ You cannot change the nickname of the Primary Server Owner.")
-
-        if member.top_role >= ctx.author.top_role and not is_server_owner_or_extra_owner(ctx.guild, ctx.author):
-            return await ctx.reply("❌ You cannot change nickname of a member with an equal or higher role.")
-
-        await member.edit(nick=new_nick, reason=f"Changed by {ctx.author}")
-        if new_nick:
-            await ctx.reply(f"✅ Changed nickname of {member.mention} to **{new_nick}**.")
-        else:
-            await ctx.reply(f"✅ Reset nickname of {member.mention}.")
-
     @commands.hybrid_command(name="massrole", help="Mass add or remove a role from all humans or bots.")
     @blacklist_check()
     @ignore_check()
