@@ -1,5 +1,6 @@
 import discord
 import re
+import logging
 from typing import *
 from collections import Counter
 from utils.Tools import *
@@ -11,6 +12,7 @@ import aiohttp
 
 time_regex = re.compile(r"(?:(\d{1,5})(h|s|m|d))+?")
 time_dict = {"h": 3600, "s": 1, "m": 60, "d": 86400}
+logger = logging.getLogger(__name__)
 
 
 def convert(argument):
@@ -528,38 +530,46 @@ class Moderation(commands.Cog):
   @commands.hybrid_command(
         name="prefix",
         aliases=["setprefix", "prefixset"],
-        help="Allows you to change the prefix of the bot for this server"
+        help="Show or change this server's prefix. Use `prefix reset` to restore the default."
     )
   @blacklist_check()
   @ignore_check()
-  @commands.has_permissions(administrator=True)
+  @commands.has_guild_permissions(manage_guild=True)
   @commands.cooldown(1, 10, commands.BucketType.user)
   @commands.max_concurrency(1, per=commands.BucketType.default, wait=False)
   @commands.guild_only()
-  async def _prefix(self, ctx: commands.Context, prefix: str):
-      if not prefix:
-          await ctx.reply(embed=discord.Embed(title="<:Yuna_cross:1227866668152393789> Error",
-                description="Prefix cannot be empty. Please provide a valid prefix.",
-                color=self.color
-            ))
-          return
-          
-      data = await getConfig(ctx.guild.id)
-      if is_server_owner_or_extra_owner(ctx.guild, ctx.author) or ctx.author.top_role.position > ctx.guild.me.top_role.position:
-          data["prefix"] = str(prefix)
-          await updateConfig(ctx.guild.id, data)
-          embed1=discord.Embed(title="<a:tick:1558726958802800660> Success",
-                description=f"Changed Prefix For this guild to `{prefix}`\n\nNew Prefix for **{ctx.guild.name}** is : `{prefix}`\nUse `{prefix}help` For More.",
-                color=self.color
-                             )
-          await ctx.reply(embed=embed1)
-      else:
-          denied = discord.Embed(title="<:Denied:1294218790082711553> Access Denied",
-              description="Your role should be above my top role.",
-              color=0x000000)
-          denied.set_footer(text=f"“{ctx.command.qualified_name}” Command executed by {ctx.author}",
-                     icon_url=ctx.author.avatar.url if ctx.author.avatar else ctx.author.default_avatar.url)
-          await ctx.send(embed=denied, mention_author=False)
+  async def _prefix(self, ctx: commands.Context, prefix: str = None):
+      from utils.config import DEFAULT_PREFIX
+      if prefix is None:
+          return await ctx.send(
+              f"This server's prefix is `{ctx.prefix}`. Set it with `{ctx.prefix}prefix <new prefix>` "
+              f"or reset it with `{ctx.prefix}prefix reset`."
+          )
+
+      value = prefix.strip()
+      if value.lower() == "reset":
+          value = DEFAULT_PREFIX
+      if not value or len(value) > 10 or any(ch.isspace() for ch in value) or value.startswith("<@"):
+          return await ctx.send("Prefix must be 1–10 non-space characters and cannot be a mention.")
+
+      try:
+          import aiosqlite
+          async with aiosqlite.connect("db/prefix.db", timeout=5) as db:
+              await db.execute(
+                  "INSERT INTO prefixes (guild_id, prefix) VALUES (?, ?) "
+                  "ON CONFLICT(guild_id) DO UPDATE SET prefix=excluded.prefix",
+                  (ctx.guild.id, value),
+              )
+              await db.commit()
+          from utils.settings_manager import settings
+          settings.set_guild_setting(ctx.guild.id, "prefix", value)
+          from core.Bot import invalidate_prefix_cache
+          invalidate_prefix_cache(ctx.guild.id)
+      except Exception:
+          logger.exception("Could not persist prefix for guild %s", ctx.guild.id)
+          return await ctx.send("I couldn't save the prefix. Please try again later.")
+
+      await ctx.send(f"Prefix updated to `{value}` for this server. Use `{value}help` for help.")
         
 
 

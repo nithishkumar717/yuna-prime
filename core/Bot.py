@@ -11,7 +11,7 @@ from discord.ext import commands
 from colorama import Fore, Style, init
 
 import utils.embed_theme
-from utils.config import OWNER_IDS
+from utils.config import OWNER_IDS, DEFAULT_PREFIX
 from utils import getConfig
 from utils.time_utils import format_ist_time, format_ist_full, now_ist
 from .Context import Context
@@ -326,10 +326,10 @@ class BotBase(commands.AutoShardedBot):
             try:
                 np_set = await _get_cached_np_set()
                 if message.author and (message.author.id in np_set or message.author.id in OWNER_IDS):
-                    return commands.when_mentioned_or('$', '')(self, message)
+                    return commands.when_mentioned_or(DEFAULT_PREFIX, '')(self, message)
             except Exception:
                 pass
-            return commands.when_mentioned_or('$')(self, message)
+            return commands.when_mentioned_or(DEFAULT_PREFIX)(self, message)
 
         guild_id = message.guild.id
         prefix = _cached_prefix(guild_id)
@@ -337,13 +337,13 @@ class BotBase(commands.AutoShardedBot):
             try:
                 data = await getConfig(guild_id)
                 if isinstance(data, dict):
-                    prefix = data.get("prefix", "$")
+                    prefix = data.get("prefix", DEFAULT_PREFIX)
                 elif isinstance(data, (list, tuple)) and len(data) > 0:
                     prefix = data[0]
                 else:
-                    prefix = "$"
+                    prefix = DEFAULT_PREFIX
             except Exception:
-                prefix = "$"
+                prefix = DEFAULT_PREFIX
             _prefix_cache[guild_id] = (prefix, time.time())
 
         try:

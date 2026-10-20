@@ -47,11 +47,11 @@ async def collect_telemetry_metrics(bot, guild, ctx_or_interaction, t_start=None
     shard_id = getattr(guild, 'shard_id', 0) if guild else 0
     shard_count = getattr(bot, 'shard_count', 1) or 1
     shard = bot.get_shard(shard_id) if hasattr(bot, 'get_shard') else None
-    raw_ws = shard.latency if (shard and hasattr(shard, 'latency') and isinstance(shard.latency, (int, float))) else getattr(bot, 'latency', 0.015)
+    raw_ws = shard.latency if (shard and hasattr(shard, 'latency') and isinstance(shard.latency, (int, float))) else getattr(bot, 'latency', None)
     if raw_ws is None or not isinstance(raw_ws, (int, float)) or raw_ws == float('inf') or raw_ws != raw_ws:
-        bot_ms = 0.01
+        bot_ms = None
     else:
-        bot_ms = max(0.01, round(raw_ws * 1000, 2))
+        bot_ms = round(raw_ws * 1000, 2)
 
     # 2. Pure real-time latency probes across MongoDB Clusters and Discord REST RTT
     async def probe_cluster(uri_key=None, default_uri=None):
@@ -77,7 +77,7 @@ async def collect_telemetry_metrics(bot, guild, ctx_or_interaction, t_start=None
             await bot.http.request(route)
             return max(0.01, round((time.perf_counter() - t0) * 1000, 2))
         except Exception:
-            return max(0.01, round(bot_ms, 2))
+            return "N/A"
 
     c1_task = probe_cluster(uri_key="MONGODB_URI")
     c2_task = probe_cluster(uri_key="PERMANENT_MONGODB_URI", default_uri=os.getenv("UPDATE_MONGODB_URI"))

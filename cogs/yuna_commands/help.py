@@ -30,7 +30,7 @@ def build_help_embed(prefix: str = "$", command_count: int = 0, slash_count: int
     )
     embed.add_field(
         name="How to use me?",
-        value=f">>> `{prefix}help <command/module>` to view details!\n*Example:* `{prefix}help antinuke` or `{prefix}help automod`",
+        value=f">>> `{prefix}help <command/module>` to view details!\n*Example:* `{prefix}help antinuke` or `{prefix}help automod`\nChange this server's prefix with `{prefix}prefix <new prefix>` (Manage Server).",
         inline=False
     )
     embed.add_field(
@@ -38,7 +38,7 @@ def build_help_embed(prefix: str = "$", command_count: int = 0, slash_count: int
         value=(
             "• **Security & Anti-Nuke** • Autonomous Anti-Nuke V2, TurboBan, Whitelists, Bot Guard & Emergency Lockdown.\n"
             "• **AutoMod** • Real-time filtering of spam, malicious links, invites, mass mentions & blacklisted words.\n"
-            "• **Moderation** • High-precision member discipline, channel locks, purge filters & honeypot traps.\n"
+            "• **Moderation** • High-precision member discipline, channel locks, purge filters & member controls.\n"
             "• **Logs & Audits** • Forensic audit trails, event routing and instant security notifications."
         ),
         inline=False
@@ -85,10 +85,7 @@ class HelpCommand(commands.HelpCommand):
         await self.send_ignore_message(ctx, "command")
         return
 
-    from utils.config import OWNER_IDS
-    is_owner = ctx.author.id in OWNER_IDS or (await ctx.bot.is_owner(ctx.author) if hasattr(ctx.bot, "is_owner") else False)
-
-    cmds = [str(cmd) for cmd in self.context.bot.walk_commands() if not cmd.hidden or is_owner]
+    cmds = [str(cmd) for cmd in self.context.bot.walk_commands() if not cmd.hidden]
     matches = get_close_matches(string, cmds)
 
     embed = discord.Embed(
@@ -137,38 +134,7 @@ class HelpCommand(commands.HelpCommand):
       return
 
     if command.hidden:
-      from utils.config import OWNER_IDS
-      is_owner = ctx.author.id in OWNER_IDS or (await ctx.bot.is_owner(ctx.author) if hasattr(ctx.bot, "is_owner") else False)
-      if not is_owner:
-        if command.name == "np" or (getattr(command, "root_parent", None) and getattr(command.root_parent, "name", None) == "np"):
-          from utils.support_utils import get_support_url
-          support_url = get_support_url(ctx.bot)
-          embed = discord.Embed(
-              title="🎁 Claim Lifetime Free No-Prefix Access",
-              description=(
-                  "Want to run Yuna commands effortlessly without typing a prefix?\n\n"
-                  "✨ **Lifetime Free Beta Program**\n"
-                  f"➜ Join our **[Official Support Server]({support_url})**\n"
-                  "➜ Head over to the `#claim-no-prefix` channel\n"
-                  "➜ Click **🎁 Claim Free No-Prefix (Lifetime)** for instant 1-click activation!\n\n"
-                  "*(Works globally across every Discord server where Yuna is present!)*"
-              ),
-              color=color
-          )
-          avatar = ctx.bot.user.display_avatar.url if ctx.bot.user else None
-          if avatar:
-              embed.set_thumbnail(url=avatar)
-          embed.set_footer(text=f"Requested by {ctx.author.display_name} • Free Testing Beta", icon_url=ctx.author.display_avatar.url)
-          view = discord.ui.View()
-          view.add_item(discord.ui.Button(
-              label="👉 Claim Now",
-              style=discord.ButtonStyle.link,
-              url=support_url,
-              emoji="🎁"
-          ))
-          return await ctx.reply(embed=embed, view=view, mention_author=False)
-        await self.send_error_message(command.qualified_name)
-        return
+      return await ctx.reply("That command is hidden from help.", mention_author=False)
     
     sonu = f">>> {command.help}" if command.help else '>>> No Help Provided...'
     embed = discord.Embed(
@@ -256,7 +222,7 @@ class HelpCommand(commands.HelpCommand):
             f"➜ `{self.context.prefix}{cmd.qualified_name}`\n",
             f"{cmd.short_doc if cmd.short_doc else ''}\n\u200b"
         )
-        for cmd in group.commands
+        for cmd in group.commands if not cmd.hidden
     ]
 
     count = len(group.commands)
@@ -288,7 +254,7 @@ class HelpCommand(commands.HelpCommand):
       f"➜ `{self.context.prefix}{cmd.qualified_name}`",
       f"{cmd.short_doc if cmd.short_doc else ''}"
       f"\n\u200b",
-    ) for cmd in cog.get_commands()]
+    ) for cmd in cog.get_commands() if not cmd.hidden]
     embeds = FieldPagePaginator(
       entries=entries,
       title=f"{cog.qualified_name.title()} ({len(cog.get_commands())})",

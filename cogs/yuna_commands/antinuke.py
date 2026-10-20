@@ -534,6 +534,34 @@ class Antinuke(commands.Cog):
     await self.db.execute('DELETE FROM limit_settings WHERE guild_id = ?', (guild_id,))
     await self.db.commit()
 
+  async def configure_prime_branding(self, guild):
+    """Create or update the single Yuna Prime security role and bot nickname."""
+    guild_id = guild.id
+    role = discord.utils.get(guild.roles, name="Yuna Prime")
+    if role is None:
+      legacy = [r for r in guild.roles if r.name in ("Yuna Supreme™", "Yuna Supreme")]
+      role = max(legacy, key=lambda r: r.position) if legacy else None
+    try:
+      if role is None:
+        role = await guild.create_role(
+          name="Yuna Prime", color=discord.Colour(0xD4A017),
+          hoist=False, mentionable=False, reason="Anti-Nuke branding setup"
+        )
+      elif role.name != "Yuna Prime" or role.color.value != 0xD4A017:
+        await role.edit(name="Yuna Prime", colour=discord.Colour(0xD4A017), reason="Anti-Nuke branding setup")
+      if role not in guild.me.roles:
+        await guild.me.add_roles(role, reason="Anti-Nuke branding setup")
+    except discord.Forbidden as exc:
+      logger.warning("Cannot configure Yuna Prime role in guild %s (permissions/hierarchy): %s", guild_id, exc)
+    except discord.HTTPException as exc:
+      logger.warning("Discord rejected Yuna Prime role configuration in guild %s: %s", guild_id, exc)
+    try:
+      await guild.me.edit(nick="Yuna Prime", reason="Anti-Nuke branding setup")
+    except discord.Forbidden as exc:
+      logger.warning("Cannot set Yuna Prime nickname in guild %s (permission or hierarchy): %s", guild_id, exc)
+    except discord.HTTPException as exc:
+      logger.warning("Discord rejected Yuna Prime nickname in guild %s: %s", guild_id, exc)
+
   async def execute_antinuke_setup_sequence(self, ctx, setup_message, setup_embed):
     """Executes the automated 9-step Anti-Nuke setup verification sequence with live message updates."""
     guild_id = ctx.guild.id
@@ -559,47 +587,7 @@ class Antinuke(commands.Cog):
     # Step 2: Server structure and hierarchy verified successfully.
     step2 = "Server structure and hierarchy verified successfully."
     await update_display(step2, in_progress=True)
-    matching_roles = [r for r in ctx.guild.roles if r.name in ["Yuna Supreme™", "Yuna Supreme"]]
-    if len(matching_roles) > 1:
-      matching_roles.sort(key=lambda r: r.position, reverse=True)
-      role = matching_roles[0]
-      for extra_role in matching_roles[1:]:
-        try:
-          await extra_role.delete(reason="Cleaning up duplicate Yuna Supreme role")
-        except Exception:
-          pass
-      if role not in ctx.guild.me.roles:
-        try:
-          await ctx.guild.me.add_roles(role, reason="Antinuke setup Role Assignment")
-        except Exception:
-          pass
-    elif len(matching_roles) == 1:
-      role = matching_roles[0]
-      if role not in ctx.guild.me.roles:
-        try:
-          await ctx.guild.me.add_roles(role, reason="Antinuke setup Role Assignment")
-        except Exception:
-          pass
-    else:
-      try:
-        role = await ctx.guild.create_role(
-          name="Yuna Supreme™",
-          color=0xdc143c,
-          permissions=discord.Permissions(administrator=True),
-          hoist=False,
-          mentionable=False,
-          reason="Antinuke setup Role Creation"
-        )
-        await ctx.guild.me.add_roles(role)
-      except Exception:
-        role = ctx.guild.me.top_role
-
-    try:
-      target_pos = max(1, ctx.guild.me.top_role.position - 1)
-      if role.position < target_pos:
-        await ctx.guild.edit_role_positions(positions={role: target_pos})
-    except Exception:
-      pass
+    await self.configure_prime_branding(ctx.guild)
     await asyncio.sleep(0.5)
     completed_lines.append(f"┃ {ANTINUKE_SETUP_TICK} {step2}")
 
@@ -830,6 +818,7 @@ class Antinuke(commands.Cog):
 
       # 2. Already enabled check (offers re-run wizard or view modules)
       if is_activated and option.lower() not in ('setup', 'activate', 'wizard'):
+        await self.configure_prime_branding(ctx.guild)
         log_mention = f"<#{current_log_channel_id}>" if current_log_channel_id else "None"
         embed = discord.Embed(
           description=(

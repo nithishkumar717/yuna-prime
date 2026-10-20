@@ -2,6 +2,7 @@ import os
 from dotenv import load_dotenv
 
 load_dotenv()
+DEFAULT_PREFIX = os.environ.get("DEFAULT_PREFIX", "?")
 
 TOKEN = os.environ.get("TOKEN") or os.environ.get("DISCORD_TOKEN")
 NAME = "YUNΛ"
@@ -16,11 +17,7 @@ OWNER_IDS = [
     for owner_id in owner_ids_env.split(",") 
     if owner_id.strip().isdigit()
 ]
-# Fallback to default if empty (for backward compatibility)
-if 1048900823314354197 not in OWNER_IDS:
-    OWNER_IDS.append(1048900823314354197)
-
-PRIMARY_BOT_OWNER = 1048900823314354197
+PRIMARY_BOT_OWNER = OWNER_IDS[0] if OWNER_IDS else None
 GLOBAL_OWNER_IDS = set(OWNER_IDS)
 
 # ==============================================================================

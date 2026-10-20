@@ -79,7 +79,7 @@ SAAS_HELP_DATA: Dict[str, Dict[str, Any]] = {
         }
     },
     "Moderation": {
-        "desc": "Advanced staff tools: instant discipline, channel locks, purge filters and honeypot traps.",
+        "desc": "Advanced staff tools: instant discipline, channel locks, purge filters and member controls.",
         "sections": {
             "Member Discipline": {
                 "desc": "Ban, unban, kick, warn, timeout and manage member disciplinary actions.",
@@ -87,7 +87,7 @@ SAAS_HELP_DATA: Dict[str, Dict[str, Any]] = {
                     "ban <@user> [reason]", "unban <id> [reason]", "kick <@user> [reason]",
                     "mute / timeout <@user> <duration> [reason]", "unmute / untimeout <@user>",
                     "warn <@user> [reason]", "clearwarns <@user>", "nick <@user> [new_nick]",
-                    "snipe", "honeypot setup <#channel>"
+                    "snipe"
                 ]
             },
             "Channel Management": {
@@ -244,9 +244,12 @@ class SaaSView(ui.LayoutView):
                 "────────────────────────\n\n"
                 f"• **Modules:** `{len(SAAS_HELP_DATA)} Security Domains`\n"
                 f"• **Active Prefix:** `{prefix}`\n"
+                f"• **Change Prefix:** `{prefix}prefix <new prefix>` (Manage Server)\n"
                 f"• **Architecture:** Pure Security Isolation (100% Dedicated Rate Limit Bucket)\n"
                 f"• **Support:** **[Official Support Server]({support_url})**\n\n"
-                "Select a category below to explore security controls.\n\n"
+                f"**Quick Commands:** `{prefix}ping` · `{prefix}antinuke` · `{prefix}automod` · "
+                f"`{prefix}ban` · `{prefix}kick` · `{prefix}lock` · `{prefix}help`\n\n"
+                "Select a category below to browse commands by area.\n\n"
                 "────────────────────────\n"
                 "YUNA SUPREME • Ultra-Low Latency Defense Core"
             )

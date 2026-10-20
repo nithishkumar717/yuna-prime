@@ -89,7 +89,6 @@ from .yuna_moderation.message import Message
 from .yuna_moderation.moderation import Moderation
 from .yuna_moderation.topcheck import TopCheck
 from .yuna_moderation.snipe import Snipe
-from .yuna_moderation.honeypot import Honeypot
 
 
 async def setup(bot: BotBase):
@@ -120,7 +119,7 @@ async def setup(bot: BotBase):
         
         # Moderation Commands
         Ban, Unban, Mute, Unmute, Lock, Unlock, Hide, Unhide, Kick, Warn,
-        Role, Message, Moderation, TopCheck, Snipe, Honeypot
+        Role, Message, Moderation, TopCheck, Snipe
     ]
 
     loaded = 0

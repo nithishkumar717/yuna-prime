@@ -16,6 +16,7 @@ import sys
 import hmac
 import hashlib
 import asyncio
+import re
 import signal
 import subprocess
 from datetime import datetime, timezone
@@ -25,7 +26,7 @@ from discord import app_commands
 from discord.ext import commands
 from aiohttp import web
 
-from utils.config import OWNER_IDS, PRIMARY_BOT_OWNER, GLOBAL_OWNER_IDS
+from utils.config import OWNER_IDS
 from utils.git_auth import (
     get_auth_remote_url,
     get_clean_remote_url,
@@ -36,15 +37,9 @@ from utils.git_auth import (
 
 
 def is_bot_owner():
-    """Robust owner check verifying PRIMARY_BOT_OWNER, GLOBAL_OWNER_IDS, OWNER_IDS, or bot.is_owner()."""
+    """Restrict repository updates to IDs explicitly configured in OWNER_IDS."""
     async def predicate(ctx: commands.Context) -> bool:
-        uid = ctx.author.id
-        if (uid in GLOBAL_OWNER_IDS) or (uid == PRIMARY_BOT_OWNER) or (uid in OWNER_IDS):
-            return True
-        try:
-            return await ctx.bot.is_owner(ctx.author)
-        except Exception:
-            return False
+        return ctx.author.id in OWNER_IDS
     return commands.check(predicate)
 
 
@@ -53,6 +48,10 @@ WEBHOOK_SECRET  = os.getenv("GITHUB_WEBHOOK_SECRET", "")   # GitHub webhook secr
 WEBHOOK_PORT    = int(os.getenv("GIT_WEBHOOK_PORT", "2034"))  # Port to listen on
 GIT_BRANCH      = os.getenv("GIT_BRANCH", "main")           # Branch to pull from
 GIT_LOG_CHANNEL = int(os.getenv("GIT_LOG_CHANNEL_ID", "0")) # Optional: Discord channel ID for deploy logs
+try:
+    GIT_WATCHDOG_INTERVAL = max(60, int(os.getenv("GIT_WATCHDOG_INTERVAL", "900")))
+except ValueError:
+    GIT_WATCHDOG_INTERVAL = 900
 # ─────────────────────────────────────────────────────────────────────────────
 
 TICK  = "<a:tick:1562100631605350441>"
@@ -61,6 +60,14 @@ COLOR_DARK = 0x2b2d31
 COLOR_OK   = 0x2b2d31
 COLOR_ERR  = 0x2b2d31
 COLOR_INF  = 0x2b2d31
+
+
+def _redact_git_credentials(output: str) -> str:
+    """Prevent credentials embedded in Git URLs or environment from reaching logs."""
+    token = os.getenv("GITHUB_TOKEN", "")
+    if token:
+        output = output.replace(token, "[REDACTED]")
+    return re.sub(r"https://[^/@\s]+@github\.com", "https://[REDACTED]@github.com", output)
 
 
 def _verify_signature(body: bytes, signature_header: str) -> bool:
@@ -78,50 +85,50 @@ def _verify_signature(body: bytes, signature_header: str) -> bool:
 
 
 def _run_git_pull() -> tuple[bool, str]:
-    """Run git pull origin <branch> synchronously. Returns (success, output)."""
+    """Fast-forward only from the configured branch; never discard local work."""
     try:
         root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        if not GIT_BRANCH or any(ch not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._/-" for ch in GIT_BRANCH) or GIT_BRANCH.startswith("-"):
+            return False, "Invalid GIT_BRANCH configuration."
         ok, msg = ensure_git_remote_configured(root_dir)
         if not ok:
             return False, msg
-
-        # 1. Fetch latest commits from remote
-        code, out = run_git_command(
-            ["git", "fetch", "origin", f"+refs/heads/{GIT_BRANCH}:refs/remotes/origin/{GIT_BRANCH}"],
-            cwd=root_dir,
-            timeout=60
-        )
-        if code != 0:
-            # Fallback to simple fetch
-            code, out = run_git_command(["git", "fetch", "origin", GIT_BRANCH], cwd=root_dir, timeout=60)
-            if code != 0:
-                return False, f"git fetch failed: {out}"
-
-        # 2. Cleanly reset to origin/<branch> or FETCH_HEAD
-        # Security: .gitignore files (.env, db/, logs) are strictly protected and never touched
-        code, out = run_git_command(["git", "reset", "--hard", f"origin/{GIT_BRANCH}"], cwd=root_dir, timeout=30)
-        if code != 0:
-            code, out = run_git_command(["git", "reset", "--hard", "FETCH_HEAD"], cwd=root_dir, timeout=30)
-
-        # 3. Ensure branch is checked out to GIT_BRANCH (e.g. main)
-        run_git_command(["git", "checkout", "-B", GIT_BRANCH, f"origin/{GIT_BRANCH}"], cwd=root_dir, timeout=15)
-
-        # 4. Ensure ENVIRONMENT=vps on disk in production
-        try:
-            env_file = os.path.join(root_dir, ".env")
-            if os.path.exists(env_file):
-                with open(env_file, "r", encoding="utf-8") as ef:
-                    env_txt = ef.read()
-                if "ENVIRONMENT=local" in env_txt:
-                    env_txt = env_txt.replace("ENVIRONMENT=local", "ENVIRONMENT=vps")
-                    with open(env_file, "w", encoding="utf-8") as ef:
-                        ef.write(env_txt)
-        except Exception:
-            pass
-
-        return code == 0, out
+        code, out = run_git_command(["git", "pull", "--ff-only", "origin", GIT_BRANCH], cwd=root_dir, timeout=120)
+        return code == 0, out or ("Already up to date." if code == 0 else "git pull failed without diagnostic output.")
     except Exception as e:
         return False, f"git pull failed: {e}"
+
+
+def _check_remote_update() -> tuple[bool, str]:
+    """Check for a safe fast-forward update without changing the working tree."""
+    root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    try:
+        if not GIT_BRANCH or any(ch not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._/-" for ch in GIT_BRANCH) or GIT_BRANCH.startswith("-"):
+            return False, "Invalid GIT_BRANCH configuration."
+        branch_code, branch = run_git_command(["git", "branch", "--show-current"], cwd=root_dir, timeout=5)
+        if branch_code != 0 or branch.strip() != GIT_BRANCH:
+            return False, f"Watchdog skipped: checkout branch is {branch.strip() or 'unknown'}, expected {GIT_BRANCH}."
+        status_code, status = run_git_command(["git", "status", "--porcelain"], cwd=root_dir, timeout=10)
+        if status_code != 0:
+            return False, f"Could not inspect working tree: {status}"
+        if status.strip():
+            return False, "Watchdog skipped: working tree has local changes."
+        local_code, local = run_git_command(["git", "rev-parse", "HEAD"], cwd=root_dir, timeout=5)
+        if local_code != 0:
+            return False, f"Could not inspect local commit: {local}"
+        remote_code, remote = run_git_command(
+            ["git", "ls-remote", "--heads", "origin", f"refs/heads/{GIT_BRANCH}"],
+            cwd=root_dir,
+            timeout=15,
+        )
+        if remote_code != 0:
+            return False, f"Could not check origin: {remote}"
+        remote_hash = remote.split()[0] if remote.split() else ""
+        if not remote_hash:
+            return False, f"No origin/{GIT_BRANCH} branch was found."
+        return local.strip() != remote_hash, ""
+    except Exception as exc:
+        return False, f"Watchdog check failed: {exc}"
 
 
 def _get_git_status() -> dict:
@@ -360,19 +367,56 @@ class GitPull(commands.Cog):
         self._webhook_runner: web.AppRunner | None = None
         self._webhook_task: asyncio.Task | None = None
         self._restart_pending = False
+        self._git_lock = asyncio.Lock()
+        self._watchdog_task: asyncio.Task | None = None
 
     # ─── Cog Lifecycle ───────────────────────────────────────────────────────
 
     async def cog_load(self):
         """Start the embedded webhook HTTP server when cog loads."""
         self._webhook_task = asyncio.create_task(self._start_webhook_server())
+        self._watchdog_task = asyncio.create_task(self._git_watchdog())
 
     async def cog_unload(self):
         """Stop the webhook server cleanly when cog unloads."""
         if self._webhook_task and not self._webhook_task.done():
             self._webhook_task.cancel()
+        if self._watchdog_task and not self._watchdog_task.done():
+            self._watchdog_task.cancel()
         if self._webhook_runner:
             await self._webhook_runner.cleanup()
+
+    async def _pull_locked(self) -> tuple[bool, str]:
+        """Serialize all pull triggers and keep blocking Git work off the event loop."""
+        async with self._git_lock:
+            return await asyncio.to_thread(_run_git_pull)
+
+    async def _git_watchdog(self):
+        """Poll upstream infrequently; pull only clean fast-forward updates."""
+        await self.bot.wait_until_ready()
+        while not self.bot.is_closed():
+            try:
+                await asyncio.sleep(GIT_WATCHDOG_INTERVAL)
+                async with self._git_lock:
+                    update_available, detail = await asyncio.to_thread(_check_remote_update)
+                    if detail:
+                        if "skipped" not in detail.lower():
+                            print(f"[GitPull Watchdog] {_redact_git_credentials(detail)}", flush=True)
+                        continue
+                    if not update_available:
+                        continue
+                    success, output = await asyncio.to_thread(_run_git_pull)
+                if success:
+                    print(f"[GitPull Watchdog] Updated from origin/{GIT_BRANCH}; restarting bot.", flush=True)
+                    await self._send_deploy_log(True, output, triggered_by="Git Watchdog")
+                    asyncio.create_task(self._delayed_restart(3))
+                    return
+                print(f"[GitPull Watchdog] Automatic pull failed: {_redact_git_credentials(output)}", flush=True)
+                await self._send_deploy_log(False, _redact_git_credentials(output), triggered_by="Git Watchdog")
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                print(f"[GitPull Watchdog] Check failed: {_redact_git_credentials(str(exc))}", flush=True)
 
     # ─── Webhook Server ──────────────────────────────────────────────────────
 
@@ -419,8 +463,7 @@ class GitPull(commands.Cog):
         print(f"[GitPull] ✅ GitHub push webhook received — starting git pull...")
 
         # 4. Run git pull in executor (non-blocking)
-        loop = asyncio.get_event_loop()
-        success, output = await loop.run_in_executor(None, _run_git_pull)
+        success, output = await self._pull_locked()
 
         # 5. Log to Discord channel if configured
         await self._send_deploy_log(success, output, triggered_by="GitHub Push")
@@ -526,13 +569,13 @@ class GitPull(commands.Cog):
         else:
             return await self.gitpull_cmd(ctx, flag=sub.strip())
 
-    @git_group.command(name="pull", aliases=["update"])
+    @git_group.command(name="pull", aliases=["update"], hidden=True)
     @is_bot_owner()
     async def git_pull_sub(self, ctx: commands.Context, flag: str = ""):
         """Owner-only: $git pull [check]"""
         return await self.gitpull_cmd(ctx, flag=flag)
 
-    @git_group.command(name="status", aliases=["info", "version"])
+    @git_group.command(name="status", aliases=["info", "version"], hidden=True)
     @is_bot_owner()
     async def git_status_sub(self, ctx: commands.Context):
         """Owner-only: $git status"""
@@ -560,7 +603,7 @@ class GitPull(commands.Cog):
             )
             if bot_avatar:
                 progress_embed.set_author(name="YUNΛ SYSTEM ORCHESTRATOR", icon_url=bot_avatar)
-            msg = await ctx.send(embed=progress_embed)
+            msg = await ctx.author.send(embed=progress_embed)
 
             telemetry = await _get_upgrade_telemetry_async()
             local_info = telemetry.get("local", {})
@@ -616,7 +659,7 @@ class GitPull(commands.Cog):
             try:
                 await msg.edit(embed=confirm_embed, view=view)
             except Exception:
-                msg = await ctx.send(embed=confirm_embed, view=view)
+                msg = await ctx.author.send(embed=confirm_embed, view=view)
 
             timed_out = await view.wait()
             if timed_out:
@@ -649,11 +692,10 @@ class GitPull(commands.Cog):
             )
             if bot_avatar:
                 init_embed.set_author(name="YUNΛ SYSTEM ORCHESTRATOR", icon_url=bot_avatar)
-            msg = await ctx.send(embed=init_embed)
+            msg = await ctx.author.send(embed=init_embed)
 
         # Run in executor
-        loop = asyncio.get_event_loop()
-        success, output = await loop.run_in_executor(None, _run_git_pull)
+        success, output = await self._pull_locked()
 
         output_display = output[:900] + "..." if len(output) > 900 else output
 
@@ -695,13 +737,11 @@ class GitPull(commands.Cog):
                 await msg.edit(embed=embed, view=None)
             except Exception:
                 try:
-                    await ctx.send(embed=embed)
+                    await ctx.author.send(embed=embed)
                 except Exception:
                     pass
 
             # Log to deploy channel too
-            await self._send_deploy_log(success, output, triggered_by=f"{ctx.author} via Discord $gitpull")
-
             # Record in persistent deployment history
             try:
                 from core.git_history import record_git_deploy
@@ -743,7 +783,7 @@ class GitPull(commands.Cog):
                 await msg.edit(embed=embed, view=None)
             except Exception:
                 try:
-                    await ctx.send(embed=embed)
+                    await ctx.author.send(embed=embed)
                 except Exception:
                     pass
 
@@ -785,11 +825,6 @@ class GitPull(commands.Cog):
         except Exception:
             pass
 
-    @app_commands.command(
-        name="gitpull",
-        description="[Bot Owner Only] Pull latest code from GitHub and restart the bot"
-    )
-    @app_commands.describe(flag="Optional: set to 'check' or 'preview' to inspect before deploy")
     async def gitpull_slash(self, interaction: discord.Interaction, flag: str = ""):
         """Owner-only slash command: run git pull and restart."""
         uid = interaction.user.id

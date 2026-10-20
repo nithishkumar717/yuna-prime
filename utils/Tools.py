@@ -116,17 +116,15 @@ async def getConfig(guildID):
         print(f"[DB FALLBACK] SQLite prefix fetch error for {guildID}: {e}")
 
     # 3. Default fallback
-    default_prefix = "$"
+    from utils.config import DEFAULT_PREFIX
+    default_prefix = DEFAULT_PREFIX
     settings.set_guild_setting(guildID, "prefix", default_prefix)
-    try:
-        await updateConfig(guildID, {"prefix": default_prefix})
-    except Exception:
-        pass
     return {"prefix": default_prefix}
 
 async def updateConfig(guildID, data):
     from utils.settings_manager import settings
-    prefix = data.get("prefix", "$")
+    from utils.config import DEFAULT_PREFIX
+    prefix = data.get("prefix", DEFAULT_PREFIX)
     # Save locally immediately
     settings.set_guild_setting(guildID, "prefix", prefix)
     try:
