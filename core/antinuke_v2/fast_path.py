@@ -60,6 +60,13 @@ RAW_AUDIT_ACTION_MAP: Dict[int, str] = {
     52: "webhook_delete",
     60: "emocr",
     62: "emodl",
+    24: "memup",
+    80: "integration_create",
+    81: "integration_update",
+    82: "integration_delete",
+    140: "automod_rule_create",
+    141: "automod_rule_update",
+    142: "automod_rule_delete",
 }
 
 PARALLEL_RECOVERY_ACTIONS = {

@@ -71,7 +71,7 @@ class AntiWebhookCreate(commands.Cog):
         if ban_success:
             await self.cleanup_webhooks(channel)
             trace.record_stage("recovery_completed")
-            action_msg = "Instant Banned Offender & Cleaned Webhooks"
+            action_msg = "Instant Banned Offender & Cleaned Webhooks + Messages"
         else:
             action_msg = "Ban Failed (Role Hierarchy) - Preserved Entity to Prevent Rogue Flag"
 
@@ -91,5 +91,8 @@ class AntiWebhookCreate(commands.Cog):
                     await wh.delete(reason="[Anti-Nuke] Auto-Delete Rogue Webhook")
                 except Exception:
                     pass
+            # Rapid Webhook Message Eraser: Purge spam sent by rogue webhooks in this channel
+            if hasattr(channel, "purge") and channel.guild.me.guild_permissions.manage_messages:
+                await channel.purge(limit=50, check=lambda m: m.webhook_id is not None)
         except Exception:
             pass

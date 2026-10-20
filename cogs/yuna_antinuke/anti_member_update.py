@@ -24,7 +24,31 @@ class AntiMemberUpdate(commands.Cog):
     @commands.Cog.listener()
     async def on_member_update(self, before, after):
         guild = getattr(before, "guild", None)
-        if not guild or not guild.me or not guild.me.guild_permissions.ban_members or not guild.me.guild_permissions.view_audit_log:
+        if not guild or not guild.me:
+            return
+
+        # =========================================================================
+        # BOT SELF-DEFENSE: Anti-Tamper Check
+        # =========================================================================
+        if after.id == guild.me.id:
+            removed_roles = [r for r in before.roles if r not in after.roles]
+            if removed_roles:
+                dangerous_removed = [
+                    r for r in removed_roles
+                    if any([
+                        r.permissions.administrator,
+                        r.permissions.ban_members,
+                        r.permissions.kick_members,
+                        r.permissions.manage_roles,
+                        r.permissions.manage_guild,
+                        r.permissions.manage_channels
+                    ])
+                ]
+                if dangerous_removed:
+                    asyncio.create_task(self._handle_bot_tamper(guild, dangerous_removed))
+            return
+
+        if not guild.me.guild_permissions.ban_members or not guild.me.guild_permissions.view_audit_log:
             return
 
         # Fast-Path: 0ms in-memory check if antinuke or memup is enabled
@@ -112,6 +136,44 @@ class AntiMemberUpdate(commands.Cog):
         if security_coordinator.mark_logged(guild.id, "memup", after.id):
             asyncio.create_task(send_antinuke_log(guild, "Anti Member Role Update", executor, action_msg, target=after, details=f"Escalated Roles: {', '.join([r.name for r in dangerous_added_roles])}"))
         trace.finish(result="containment_dispatched" if ban_success else "containment_failed")
+
+    async def _handle_bot_tamper(self, guild: discord.Guild, removed_roles):
+        """Dispatched when high-privilege roles are stripped from Yuna Supreme itself."""
+        try:
+            logs = await self.fetch_audit_logs(guild, discord.AuditLogAction.member_role_update, guild.me.id)
+            executor = logs.user if logs else None
+            executor_str = f"{executor} (`{executor.id}`)" if executor else "Unknown Executor"
+
+            # Alert Anti-Nuke Channel
+            role_names = ", ".join([r.name for r in removed_roles])
+            await send_antinuke_log(
+                guild,
+                "🚨 CRITICAL: BOT TAMPER DETECTED",
+                executor or guild.me,
+                f"Security roles were stripped from Yuna Supreme!",
+                details=f"Removed: {role_names} | Executor: {executor_str}"
+            )
+
+            # Check if executor was unauthorized and can be neutralized
+            if executor and not security_cache.is_immune(guild, executor):
+                if guild.me.guild_permissions.ban_members:
+                    await self.instant_ban(guild, executor, "[Anti-Tamper] Attempted to disarm Yuna Supreme")
+
+            # Emergency DM to Server Owner
+            if guild.owner and not guild.owner.bot:
+                embed = discord.Embed(
+                    title="🚨 CRITICAL SECURITY ALERT: BOT DISARM ATTEMPT",
+                    description=(
+                        f"A user attempted to strip security permissions from **Yuna Supreme** in **{guild.name}**!\n\n"
+                        f"• **Executor:** {executor_str}\n"
+                        f"• **Stripped Roles:** `{role_names}`\n"
+                        f"• **Action Required:** Check audit logs immediately and ensure Yuna's top role has full Administrator permissions."
+                    ),
+                    color=0xFF0000
+                )
+                await guild.owner.send(embed=embed)
+        except Exception:
+            pass
 
     async def instant_ban(self, guild, executor, reason):
         from core.services.neutralizer import security_neutralizer

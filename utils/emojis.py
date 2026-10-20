@@ -58,14 +58,14 @@ CATEGORIZED_EMOJIS = {
     "role": "🎭", "user": "👤", "member": "👤", "bot": "🤖", "clock": "⏰",
 }
 
-ANIMATED_TICK = "<a:tick:1558726958802800660>"
-ANTINUKE_TICK = "<:17742:1560628833105743972>"
-ANIMATED_CROSS = "<:yuna_cross:1227866668152393789>"
-STATIC_TICK = "<a:tick:1558726958802800660>"
-ANIMATED_SETTINGS = "<a:SETTINGS:1548704222562746478>"
-STATIC_MOD = "<:MOD:1548704219517821089>"
-ANIMATED_ENABLED = "<a:enable:1548704224974737569>"
-STATIC_DISABLED = "<:disable:1548686459865792583>"
+ANIMATED_TICK = "<a:tick:1562100631605350441>"
+ANTINUKE_TICK = "<:antinuke_tick:1562101296939409458>"
+ANIMATED_CROSS = "<:cross:1562101096686686218>"
+STATIC_TICK = "<a:tick:1562100631605350441>"
+ANIMATED_SETTINGS = "<a:settings:1562101136234651679>"
+STATIC_MOD = "<:mod:1562101121248530473>"
+ANIMATED_ENABLED = "<a:enable:1562101109869252740>"
+STATIC_DISABLED = "<:yuna_disable:1562099874865094726>"
 STATIC_PREVIOUS = "<:previous:1548595151755026442>"
 STATIC_NEXT = "<:next:1548595448602693652>"
 STATIC_LOOP = "<:loop:1548594863530971196>"
@@ -85,18 +85,18 @@ STATIC_MUTEALL = "<:muteall:1554932785284776076>"
 STATIC_UNMUTEALL = "<:unmuteall:1557210238162182175>"
 STATIC_DEAFEN = "<:deafen:1557206833012277288>"
 STATIC_UNDEAFEN = "<:undeafen:1557208136509820948>"
-STATIC_LOCK = "<:lock:1557211239724224692>"
-STATIC_UNLOCK = "<:unlock:1557212304297431090>"
+STATIC_LOCK = "<:lock:1562101260616732683>"
+STATIC_UNLOCK = "<:unlock:1562101269341151413>"
 STATIC_HIDEVC = "<:hidevc:1557214632920227872>"
 STATIC_KICKVC = "<:kickvc:1557215509559124039>"
-ANIMATED_LOADING = "<a:loading:1554957482248380416>"
-ANIMATED_KING = "<a:crown:1557835666757521438>"
-ANIMATED_CROWN = "<a:crown:1557835666757521438>"
-ANIMATED_ALERT = "<a:37496alert:1550972111215009914>"
+ANIMATED_LOADING = "<a:loading:1562101208842506370>"
+ANIMATED_KING = "<a:crown:1562101197689725050>"
+ANIMATED_CROWN = "<a:crown:1562101197689725050>"
+ANIMATED_ALERT = "<a:alert:1562101219051311267>"
 ANIMATED_DISC = "<a:yunadisc:1557984542084829284>"
 ANIMATED_YUNADISC = "<a:yunadisc:1557984542084829284>"
-ANIMATED_ARROW = "<a:arrow:1557834336571494480>"
-STATIC_ARROW = "<a:arrow:1557834336571494480>"
+ANIMATED_ARROW = "<a:arrow:1562101229415440394>"
+STATIC_ARROW = "<a:arrow:1562101229415440394>"
 
 # --- Music & Audio Controls ---
 ANIMATED_TDMUSIC = "<a:tdmusic:1558031407865929840>"
@@ -129,181 +129,18 @@ ANIMATED_BLOCK = "<:block:1548704227310706791>"
 # --- Badges, Arrows, Crowns & Settings ---
 ANIMATED_SETTINGS2 = "<a:settings2:1557835670683263027>"
 ANIMATED_SETTINGS3 = "<a:settings3:1558033457991524412>"
-ANIMATED_RED_ARROW = "<a:redarrow:1558031429886156800>"
+ANIMATED_RED_ARROW = "<a:redarrow:1562101252056285367>"
 ANIMATED_WHITE_CROWN = "<a:whitecrown:1558031295668420638>"
 ANIMATED_CROWN_SPIN = "<a:crownspin:1558031266543308821>"
 ANIMATED_YUNA_TICKET = "<a:yunaticket:1558031276848713808>"
-ANIMATED_BANNED = "<a:bannedanimated:1558031257063923722>"
+ANIMATED_BANNED = "<a:banned:1562101281013628948>"
 ANIMATED_PREMIUM_LOGO = "<:yunalogopremium:1558031253167673416>"
 ANIMATED_BOOSTER = "<:booster:1550977479957684314>"
 ANIMATED_NITRO = "<:BadgeNitro:1550977477810065509>"
 
-OFFICIAL_EMOJI_TAGS = {
-    1558726958802800660: "<a:tick:1558726958802800660>",  # tick (animated)
-    1558033457991524412: "<a:settings3:1558033457991524412>",  # settings3 (animated)
-    1558033454514446337: "<a:chatbotwithheart:1558033454514446337>",  # chatbotwithheart (animated)
-    1558031459200143421: "<a:angelbutterfly6:1558031459200143421>",  # angelbutterfly6 (animated)
-    1558031454758375474: "<a:music1:1558031454758375474>",  # music1 (animated)
-    1558031429886156800: "<a:redarrow:1558031429886156800>",  # redarrow (animated)
-    1558031417789653082: "<a:angelbutterfly5:1558031417789653082>",  # angelbutterfly5 (animated)
-    1558031413834682368: "<a:whitebat:1558031413834682368>",  # whitebat (animated)
-    1558031410772574230: "<:cutie:1558031410772574230>",  # cutie (static)
-    1558031407865929840: "<a:tdmusic:1558031407865929840>",  # tdmusic (animated)
-    1558031400299532349: "<a:redheartrain:1558031400299532349>",  # redheartrain (animated)
-    1558031392569565264: "<a:ak:1558031392569565264>",  # ak (animated)
-    1558031389629222964: "<a:escape:1558031389629222964>",  # escape (animated)
-    1558031386475237406: "<a:rightspark:1558031386475237406>",  # rightspark (animated)
-    1558031383497023508: "<a:leftspark:1558031383497023508>",  # leftspark (animated)
-    1558031379672076309: "<:cross:1558031379672076309>",  # cross (static)
-    1558031377255899247: "<a:angelbutterfly4:1558031377255899247>",  # angelbutterfly4 (animated)
-    1558031352996167711: "<a:angelbutterfly3:1558031352996167711>",  # angelbutterfly3 (animated)
-    1558031348491354212: "<a:angelbutterfly2:1558031348491354212>",  # angelbutterfly2 (animated)
-    1558031333714960444: "<a:animheart:1558031333714960444>",  # animheart (animated)
-    1558031330791395409: "<a:fire:1558031330791395409>",  # fire (animated)
-    1558031327536746566: "<a:hookup:1558031327536746566>",  # hookup (animated)
-    1558031323312955503: "<a:skullrotation:1558031323312955503>",  # skullrotation (animated)
-    1558031319609511956: "<a:count7:1558031319609511956>",  # count7 (animated)
-    1558031315029459055: "<a:count6:1558031315029459055>",  # count6 (animated)
-    1558031307441840168: "<a:angelbutterfly:1558031307441840168>",  # angelbutterfly (animated)
-    1558031295668420638: "<a:whitecrown:1558031295668420638>",  # whitecrown (animated)
-    1558031288995291236: "<a:horse:1558031288995291236>",  # horse (animated)
-    1558031280074002483: "<a:symb:1558031280074002483>",  # symb (animated)
-    1558031276848713808: "<a:yunaticket:1558031276848713808>",  # yunaticket (animated)
-    1558031266543308821: "<a:crownspin:1558031266543308821>",  # crownspin (animated)
-    1558031260591587358: "<a:minitwobutterflies:1558031260591587358>",  # minitwobutterflies (animated)
-    1558031257063923722: "<a:bannedanimated:1558031257063923722>",  # bannedanimated (animated)
-    1558031253167673416: "<:yunalogopremium:1558031253167673416>",  # yunalogopremium (static)
-    1557984542084829284: "<a:yunadisc:1557984542084829284>",  # yunadisc (animated)
-    1557835670683263027: "<a:settings2:1557835670683263027>",  # settings2 (animated)
-    1557835666757521438: "<a:crown:1557835666757521438>",  # crown (animated)
-    1557834336571494480: "<a:arrow:1557834336571494480>",  # arrow (animated)
-    1557215509559124039: "<:kickvc:1557215509559124039>",  # kickvc (static)
-    1557214632920227872: "<:hidevc:1557214632920227872>",  # hidevc (static)
-    1557212304297431090: "<:unlock:1557212304297431090>",  # unlock (static)
-    1557211239724224692: "<:lock:1557211239724224692>",  # lock (static)
-    1557210238162182175: "<:unmuteall:1557210238162182175>",  # unmuteall (static)
-    1557208136509820948: "<:undeafen:1557208136509820948>",  # undeafen (static)
-    1557206833012277288: "<:deafen:1557206833012277288>",  # deafen (static)
-    1557204695284711516: "<:mute:1557204695284711516>",  # mute (static)
-    1554957482248380416: "<a:loading:1554957482248380416>",  # loading (animated)
-    1554932785284776076: "<:muteall:1554932785284776076>",  # muteall (static)
-    1554930999085895680: "<:playlist:1554930999085895680>",  # playlist (static)
-    1554930825014022144: "<:247mode:1554930825014022144>",  # 247mode (static)
-    1554930526228455575: "<:addsong:1554930526228455575>",  # addsong (static)
-    1554930299706802247: "<:songqueue:1554930299706802247>",  # songqueue (static)
-    1554929878774718495: "<:songfilter:1554929878774718495>",  # songfilter (static)
-    1554929086579609780: "<:songmood:1554929086579609780>",  # songmood (static)
-    1554927027545440306: "<:songresume:1554927027545440306>",  # songresume (static)
-    1554925676321050624: "<:lang:1554925676321050624>",  # lang (static)
-    1554924675035959347: "<:history:1554924675035959347>",  # history (static)
-    1554923334913884250: "<:stopmusic:1554923334913884250>",  # stopmusic (static)
-    1554920989589110884: "<:musicsearch:1554920989589110884>",  # musicsearch (static)
-    1554918644935294986: "<:10secplus:1554918644935294986>",  # 10secplus (static)
-    1554917901969006665: "<:10sec:1554917901969006665>",  # 10sec (static)
-    1554917090366849024: "<:shuffle:1554917090366849024>",  # shuffle (static)
-    1554911786480697405: "<:volume:1554911786480697405>",  # volume (static)
-    1551982339393851493: "<:musiccontrol:1551982339393851493>",  # musiccontrol (static)
-    1550977538237407442: "<:yuna_cross:1550977538237407442>",  # yuna_cross (static)
-    1550977535678873773: "<:VerifiedBotDev:1550977535678873773>",  # VerifiedBotDev (static)
-    1550977533284061275: "<:VERIFIED_BOT:1550977533284061275>",  # VERIFIED_BOT (static)
-    1550977531086372895: "<a:success_check:1550977531086372895>",  # success_check (animated)
-    1550977528158752788: "<a:star_purple:1550977528158752788>",  # star_purple (animated)
-    1550977525230866622: "<a:star_gold:1550977525230866622>",  # star_gold (animated)
-    1550977511826128966: "<a:sparkle_blast:1550977511826128966>",  # sparkle_blast (animated)
-    1550977499176116295: "<a:sg_red_dot:1550977499176116295>",  # sg_red_dot (animated)
-    1550977496466460762: "<a:rose_anim:1550977496466460762>",  # rose_anim (animated)
-    1550977489424228363: "<a:premium:1550977489424228363>",  # premium (animated)
-    1550977487222345901: "<a:owner_crown:1550977487222345901>",  # owner_crown (animated)
-    1550977484382797885: "<:Denied:1550977484382797885>",  # Denied (static)
-    1550977482092707870: "<:claim_reward:1550977482092707870>",  # claim_reward (static)
-    1550977479957684314: "<:booster:1550977479957684314>",  # booster (static)
-    1550977477810065509: "<:BadgeNitro:1550977477810065509>",  # BadgeNitro (static)
-    1550972187047890954: "<:YunaTime:1550972187047890954>",  # YunaTime (static)
-    1550972184325918751: "<:YunaMedia:1550972184325918751>",  # YunaMedia (static)
-    1550972182220374026: "<:YunaArrow:1550972182220374026>",  # YunaArrow (static)
-    1550972179770777713: "<:Yuna_users:1550972179770777713>",  # Yuna_users (static)
-    1550972176981823488: "<:Yuna_notify:1550972176981823488>",  # Yuna_notify (static)
-    1550972174452658196: "<:Yuna_giveaway:1550972174452658196>",  # Yuna_giveaway (static)
-    1550972171596333117: "<:Yuna_duration:1550972171596333117>",  # Yuna_duration (static)
-    1550972145910288464: "<a:sg_rd:1550972145910288464>",  # sg_rd (animated)
-    1550972143502762024: "<a:RedHeart:1550972143502762024>",  # RedHeart (animated)
-    1550972136741408859: "<a:max__A:1550972136741408859>",  # max__A (animated)
-    1550972131251069080: "<a:king:1550972131251069080>",  # king (animated)
-    1550972128004800602: "<a:GIFD:1550972128004800602>",  # GIFD (animated)
-    1550972116881645699: "<:Dc_RedCrownEsports:1550972116881645699>",  # Dc_RedCrownEsports (static)
-    1550972111215009914: "<a:37496alert:1550972111215009914>",  # 37496alert (animated)
-    1548704287708815420: "<:waitingroom:1548704287708815420>",  # waitingroom (static)
-    1548704285649408101: "<:untrust:1548704285649408101>",  # untrust (static)
-    1548704282390298716: "<:unblock:1548704282390298716>",  # unblock (static)
-    1548704280222109726: "<:trust:1548704280222109726>",  # trust (static)
-    1548704278284206230: "<:transfer:1548704278284206230>",  # transfer (static)
-    1548704272034566184: "<:region:1548704272034566184>",  # region (static)
-    1548704268062687282: "<:privacy:1548704268062687282>",  # privacy (static)
-    1548704259980263505: "<:name:1548704259980263505>",  # name (static)
-    1548704252862537779: "<:limit:1548704252862537779>",  # limit (static)
-    1548704249880383488: "<:kick:1548704249880383488>",  # kick (static)
-    1548704246499909815: "<:invite:1548704246499909815>",  # invite (static)
-    1548704238799028306: "<:delete:1548704238799028306>",  # delete (static)
-    1548704236307615745: "<:claim:1548704236307615745>",  # claim (static)
-    1548704229986664570: "<:chat:1548704229986664570>",  # chat (static)
-    1548704227310706791: "<:block:1548704227310706791>",  # block (static)
-    1548704224974737569: "<a:enable:1548704224974737569>",  # enable (animated)
-    1548704222562746478: "<a:SETTINGS:1548704222562746478>",  # SETTINGS (animated)
-    1548704219517821089: "<:MOD:1548704219517821089>",  # MOD (static)
-    1548690043185528932: "<a:error_wrong:1548690043185528932>",  # error_wrong (animated)
-    1548689317264625664: "<:music:1548689317264625664>",  # music (static)
-    1548688868923023490: "<:stop:1548688868923023490>",  # stop (static)
-    1548687259744866314: "<a:heart:1548687259744866314>",  # heart (animated)
-    1548686459865792583: "<:disable:1548686459865792583>",  # disable (static)
-    1548638534573752381: "<:playpause:1548638534573752381>",  # playpause (static)
-    1548595448602693652: "<:next:1548595448602693652>",  # next (static)
-    1548595151755026442: "<:previous:1548595151755026442>",  # previous (static)
-    1548594863530971196: "<:loop:1548594863530971196>",  # loop (static)
-    1548587576359780353: "<a:settings:1548587576359780353>",  # settings (animated)
-    1548587574111633431: "<:mod:1548587574111633431>",  # mod (static)
-    1548414902820020334: "<a:tick:1558726958802800660>",  # yuna_tick migrated to user preferred tick
-    1547874100519899246: "<:spotify:1547874100519899246>",  # spotify (static)
-    1227866668152393789: "<:yuna_cross:1227866668152393789>",  # yuna_cross (static)
-}
-
-OFFICIAL_EMOJI_IDS = set(OFFICIAL_EMOJI_TAGS.keys())
-
-# Map lowercased emoji names to their canonical tags (Application / Bot emojis)
-CUSTOM_EMOJI_REGEX = re.compile(r'<a?:([a-zA-Z0-9_]+):(\d+)>')
+OFFICIAL_EMOJI_TAGS: dict = {}
+OFFICIAL_EMOJI_IDS: set = set()
 OFFICIAL_EMOJI_NAME_MAP: dict = {}
-for _eid, _tag in OFFICIAL_EMOJI_TAGS.items():
-    _m = CUSTOM_EMOJI_REGEX.match(_tag)
-    if _m:
-        _name = _m.group(1).lower()
-        if _name not in OFFICIAL_EMOJI_NAME_MAP:
-            OFFICIAL_EMOJI_NAME_MAP[_name] = _tag
-
-# Add verified aliases and shortcodes for Application Emojis
-OFFICIAL_EMOJI_NAME_MAP.update({
-    "tick": "<a:tick:1558726958802800660>",
-    "check": "<a:tick:1558726958802800660>",
-    "success": "<a:tick:1558726958802800660>",
-    "yuna_tick": "<a:tick:1558726958802800660>",
-    "cross": "<:cross:1558031379672076309>",
-    "fail": "<:cross:1558031379672076309>",
-    "error": "<a:error_wrong:1548690043185528932>",
-    "denied": "<:Denied:1550977484382797885>",
-    "crown": "<a:crown:1557835666757521438>",
-    "owner": "<a:owner_crown:1550977487222345901>",
-    "ticket": "<a:yunaticket:1558031276848713808>",
-    "arrow": "<a:arrow:1557834336571494480>",
-    "redarrow": "<a:redarrow:1558031429886156800>",
-    "settings": "<a:settings:1548587576359780353>",
-    "settings3": "<a:settings3:1558033457991524412>",
-    "loading": "<a:loading:1554957482248380416>",
-    "nitro": "<:BadgeNitro:1550977477810065509>",
-    "badgenitro": "<:BadgeNitro:1550977477810065509>",
-    "booster": "<:booster:1550977479957684314>",
-    "botdev": "<:VerifiedBotDev:1550977535678873773>",
-    "verifiedbotdev": "<:VerifiedBotDev:1550977535678873773>",
-    "verified_bot": "<:VERIFIED_BOT:1550977533284061275>",
-    "verifiedbot": "<:VERIFIED_BOT:1550977533284061275>",
-})
 
 # Dynamic Application Emojis Cache File Path
 _APP_EMOJIS_FILE = os.path.join(os.path.dirname(__file__), "application_emojis.json")
@@ -319,10 +156,10 @@ def load_persisted_application_emojis() -> int:
                 try:
                     eid = int(eid_str)
                     tag = info.get("tag")
+                    name = info.get("name")
                     if tag:
                         OFFICIAL_EMOJI_TAGS[eid] = tag
                         OFFICIAL_EMOJI_IDS.add(eid)
-                        name = info.get("name")
                         if name:
                             OFFICIAL_EMOJI_NAME_MAP[name.lower()] = tag
                         loaded += 1
@@ -330,6 +167,34 @@ def load_persisted_application_emojis() -> int:
                     pass
         except Exception as e:
             print(f"[APPLICATION EMOJIS LOAD ERROR] {e}")
+
+    # Aliases mapping legacy names to verified application emojis
+    aliases = {
+        "17742": OFFICIAL_EMOJI_NAME_MAP.get("antinuke_tick"),
+        "check": OFFICIAL_EMOJI_NAME_MAP.get("tick"),
+        "success": OFFICIAL_EMOJI_NAME_MAP.get("tick"),
+        "yuna_tick": OFFICIAL_EMOJI_NAME_MAP.get("tick"),
+        "cross": OFFICIAL_EMOJI_NAME_MAP.get("cross"),
+        "fail": OFFICIAL_EMOJI_NAME_MAP.get("cross"),
+        "error": OFFICIAL_EMOJI_NAME_MAP.get("cross"),
+        "denied": OFFICIAL_EMOJI_NAME_MAP.get("cross"),
+        "yuna_cross": OFFICIAL_EMOJI_NAME_MAP.get("cross"),
+        "shield": OFFICIAL_EMOJI_NAME_MAP.get("mod"),
+        "security": OFFICIAL_EMOJI_NAME_MAP.get("mod"),
+        "admin": OFFICIAL_EMOJI_NAME_MAP.get("mod"),
+        "settings": OFFICIAL_EMOJI_NAME_MAP.get("settings"),
+        "gear": OFFICIAL_EMOJI_NAME_MAP.get("settings"),
+        "setting": OFFICIAL_EMOJI_NAME_MAP.get("settings"),
+        "warn": OFFICIAL_EMOJI_NAME_MAP.get("alert"),
+        "warning": OFFICIAL_EMOJI_NAME_MAP.get("alert"),
+        "king": OFFICIAL_EMOJI_NAME_MAP.get("crown"),
+        "owner": OFFICIAL_EMOJI_NAME_MAP.get("crown"),
+        "disable": OFFICIAL_EMOJI_NAME_MAP.get("yuna_disable"),
+    }
+    for k, v in aliases.items():
+        if v:
+            OFFICIAL_EMOJI_NAME_MAP[k] = v
+
     return loaded
 
 # Load baseline application emojis into memory immediately on import
@@ -539,6 +404,7 @@ def sanitize_emoji_string(text: Optional[str], bot=None) -> Optional[str]:
 
     def _replace_token(match):
         c_id = match.group('c_id')
+        c_name = match.group('c_name')
         if c_id:
             emoji_id = int(c_id)
             # 1. Always return canonical verified tag for official application / bot emojis
@@ -550,6 +416,8 @@ def sanitize_emoji_string(text: Optional[str], bot=None) -> Optional[str]:
                 for app_emoji in (bot.application_emojis or []):
                     if app_emoji.id == emoji_id:
                         return str(app_emoji)
+                    if c_name and getattr(app_emoji, 'name', '').lower() == c_name.lower():
+                        return str(app_emoji)
 
             # 3. Check bot's guild emojis
             if bot and hasattr(bot, 'get_emoji'):
@@ -560,8 +428,12 @@ def sanitize_emoji_string(text: Optional[str], bot=None) -> Optional[str]:
                 except Exception:
                     pass
 
-            # If not in official app emojis or bot cache, leave original custom emoji tag intact
-            return match.group(0)
+            # 4. Check official name map
+            if c_name and c_name.lower() in OFFICIAL_EMOJI_NAME_MAP:
+                return OFFICIAL_EMOJI_NAME_MAP[c_name.lower()]
+
+            # 5. Clean fallback: If bot lacks access to this custom emoji, fall back to clean Unicode
+            return get_fallback_emoji(c_name or '')
 
         u_name = match.group('u_name')
         if u_name:
@@ -653,14 +525,20 @@ def parse_component_emoji(emoji_val: Any, bot=None) -> Optional[Union[str, disco
                     return discord.PartialEmoji.from_str(OFFICIAL_EMOJI_TAGS[emoji_id])
                 except Exception:
                     pass
+            if emoji_name.lower() in OFFICIAL_EMOJI_NAME_MAP:
+                try:
+                    return discord.PartialEmoji.from_str(OFFICIAL_EMOJI_NAME_MAP[emoji_name.lower()])
+                except Exception:
+                    pass
+            if bot and hasattr(bot, 'application_emojis'):
+                for app_emoji in (bot.application_emojis or []):
+                    if app_emoji.id == emoji_id or getattr(app_emoji, 'name', '').lower() == emoji_name.lower():
+                        return app_emoji
             if bot and hasattr(bot, 'get_emoji'):
                 found = bot.get_emoji(emoji_id)
                 if found:
                     return found
-            try:
-                return discord.PartialEmoji.from_str(emoji_val.strip())
-            except Exception:
-                return get_fallback_emoji(emoji_name)
+            return get_fallback_emoji(emoji_name)
         return emoji_val.strip()
     return None
 

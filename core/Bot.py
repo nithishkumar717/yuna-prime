@@ -166,11 +166,32 @@ class BotBase(commands.AutoShardedBot):
         except Exception:
             pass
 
+    async def sync_application_emojis(self) -> tuple[int, int]:
+        """Fetches all official application emojis from Discord Developer Portal / API and updates local mapping."""
+        try:
+            app_emojis = await self.fetch_application_emojis()
+            self.application_emojis = app_emojis
+            from utils.emojis import register_application_emojis
+            new_added = register_application_emojis(app_emojis)
+            return len(app_emojis), new_added
+        except Exception as e:
+            print(Fore.YELLOW + Style.BRIGHT + f"[APPLICATION EMOJIS SYNC ERROR] {e}", flush=True)
+            return len(getattr(self, "application_emojis", []) or []), 0
+
     async def setup_hook(self):
         try:
             self.session = aiohttp.ClientSession()
         except Exception as e:
             print(f"[CLIENT SESSION INIT WARNING] {e}", flush=True)
+
+        # 0. Sync & Install Application Emojis & Global Sanitizer Hooks
+        try:
+            total, new_added = await self.sync_application_emojis()
+            from utils.emojis import install_emoji_sanitizer_hooks
+            install_emoji_sanitizer_hooks(self)
+            print(Fore.GREEN + Style.BRIGHT + f"[APPLICATION EMOJIS] Loaded {total} verified application emojis from Developer Portal.", flush=True)
+        except Exception as e:
+            print(Fore.YELLOW + f"[APPLICATION EMOJIS INIT WARNING] {e}", flush=True)
 
         # 1. Warm Discord Connection for sub-15ms REST responses
         try:
@@ -270,14 +291,17 @@ class BotBase(commands.AutoShardedBot):
         except Exception as e:
             print(Fore.YELLOW + f"[ANTINUKE V2 STATE WARNING] {e}", flush=True)
 
-        # Ensure TurboBan token is refreshed
+        # Ensure TurboBan token is refreshed and pre-warmed for 0ms REST latency
         try:
             from core.antinuke_v2.containment import turbo_ban_client
             tok = getattr(getattr(self, "http", None), "token", None)
-            if tok and not turbo_ban_client._initialized:
+            if tok and not turbo_ban_client.is_ready():
                 await turbo_ban_client.initialize(tok)
-        except Exception:
-            pass
+            if turbo_ban_client.is_ready():
+                await turbo_ban_client.warm_ping(pool_size=2)
+                print(Fore.GREEN + Style.BRIGHT + "[ANTINUKE V2 TURBO-BAN] Pre-warmed 2 active TCP/TLS keepalive sockets for 0ms execution.", flush=True)
+        except Exception as e:
+            print(Fore.YELLOW + f"[TURBO-BAN WARM WARNING] {e}", flush=True)
 
         # Sync Slash Commands if enabled
         if not getattr(self, "_synced", False):

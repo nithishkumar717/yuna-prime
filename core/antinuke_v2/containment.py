@@ -177,6 +177,62 @@ class TurboBanClient:
             logger.warning("[TurboBan] Direct raw ban exception: %s", exc)
             return False, 0, dur_ms
 
+    async def raw_kick(
+        self,
+        guild_id: int,
+        user_id: int,
+        reason: str,
+        token: Optional[str] = None,
+    ) -> Tuple[bool, int, float]:
+        """Dispatches an immediate direct HTTP DELETE member kick request."""
+        tok = token or self._token
+        if not tok:
+            return False, 0, 0.0
+        if not self._session or self._session.closed:
+            await self.initialize(tok)
+
+        clean_reason = reason[:512]
+        safe_reason = quote(clean_reason, safe="/: -_[]") if any(ord(c) > 127 or c in ('\r', '\n', '\x00') for c in clean_reason) else clean_reason
+        url = f"https://discord.com/api/v10/guilds/{guild_id}/members/{user_id}"
+        headers = {**self._base_headers, "X-Audit-Log-Reason": safe_reason} if self._base_headers else {"Authorization": f"Bot {tok}", "X-Audit-Log-Reason": safe_reason}
+
+        t0 = time.perf_counter()
+        try:
+            async with self._session.delete(url, headers=headers, timeout=aiohttp.ClientTimeout(total=2.0)) as resp:
+                dur_ms = (time.perf_counter() - t0) * 1000.0
+                return resp.status in (200, 204, 404), resp.status, dur_ms
+        except Exception as exc:
+            dur_ms = (time.perf_counter() - t0) * 1000.0
+            logger.warning("[TurboBan] Direct raw kick exception: %s", exc)
+            return False, 0, dur_ms
+
+    async def raw_delete_webhook(
+        self,
+        webhook_id: int,
+        reason: str = "[Anti-Nuke] Rogue Webhook Auto-Deleted",
+        token: Optional[str] = None,
+    ) -> Tuple[bool, int, float]:
+        """Dispatches an immediate direct HTTP DELETE webhook request."""
+        tok = token or self._token
+        if not tok:
+            return False, 0, 0.0
+        if not self._session or self._session.closed:
+            await self.initialize(tok)
+
+        clean_reason = reason[:512]
+        safe_reason = quote(clean_reason, safe="/: -_[]") if any(ord(c) > 127 or c in ('\r', '\n', '\x00') for c in clean_reason) else clean_reason
+        url = f"https://discord.com/api/v10/webhooks/{webhook_id}"
+        headers = {**self._base_headers, "X-Audit-Log-Reason": safe_reason} if self._base_headers else {"Authorization": f"Bot {tok}", "X-Audit-Log-Reason": safe_reason}
+
+        t0 = time.perf_counter()
+        try:
+            async with self._session.delete(url, headers=headers, timeout=aiohttp.ClientTimeout(total=2.0)) as resp:
+                dur_ms = (time.perf_counter() - t0) * 1000.0
+                return resp.status in (200, 204, 404), resp.status, dur_ms
+        except Exception as exc:
+            dur_ms = (time.perf_counter() - t0) * 1000.0
+            return False, 0, dur_ms
+
     async def warm_ping(self, pool_size: int = 1) -> bool:
         """Maintains the TLS 1.3 socket(s) perpetually hot by sending lightweight keep-alive requests.
         
@@ -446,10 +502,21 @@ class V2Neutralizer:
                             else:
                                 await guild.ban(actor, reason=f"[Anti-Nuke] {reason}", delete_message_days=0)
                     elif punishment == PunishmentType.KICK:
-                        if hasattr(guild, "_state") and hasattr(guild._state, "http"):
-                            await guild._state.http.kick(actor_id, guild_id, reason=f"[Anti-Nuke] {reason}")
-                        else:
-                            await guild.kick(actor, reason=f"[Anti-Nuke] {reason}")
+                        kick_ok = False
+                        http = getattr(guild, "_state", None) and getattr(guild._state, "http", None)
+                        tok = getattr(http, "token", None) if http else None
+                        if tok:
+                            if not turbo_ban_client.is_ready():
+                                await turbo_ban_client.initialize(tok)
+                            kick_ok, status_code, _ = await turbo_ban_client.raw_kick(guild_id, actor_id, f"[Anti-Nuke] {reason}", token=tok)
+                            if status_code == 403:
+                                from unittest.mock import MagicMock
+                                raise discord.Forbidden(MagicMock(status=403, reason="Forbidden"), "Role Hierarchy / Missing Permissions")
+                        if not kick_ok:
+                            if hasattr(guild, "_state") and hasattr(guild._state, "http"):
+                                await guild._state.http.kick(actor_id, guild_id, reason=f"[Anti-Nuke] {reason}")
+                            else:
+                                await guild.kick(actor, reason=f"[Anti-Nuke] {reason}")
                     elif punishment == PunishmentType.TIMEOUT:
                         timeout_until = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=28)
                         if hasattr(actor, "timeout"):

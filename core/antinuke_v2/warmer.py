@@ -29,8 +29,8 @@ class DiscordConnectionWarmer:
 
     def __init__(
         self,
-        keepalive_window_seconds: float = 180.0,
-        ping_interval_seconds: float = 120.0,
+        keepalive_window_seconds: float = 60.0,
+        ping_interval_seconds: float = 45.0,
     ) -> None:
         self.keepalive_window = keepalive_window_seconds
         self.ping_interval = ping_interval_seconds

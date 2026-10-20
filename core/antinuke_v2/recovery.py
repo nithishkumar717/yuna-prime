@@ -1110,6 +1110,18 @@ class V2RecoveryEngine:
         if not guild or not webhook_id:
             return RecoveryResult(success=False, resource_type="webhook", original_id=webhook_id, reason="invalid_params")
         try:
+            from core.antinuke_v2.containment import turbo_ban_client
+            if turbo_ban_client.is_ready():
+                del_ok, _, _ = await turbo_ban_client.raw_delete_webhook(webhook_id, reason="[Anti-Nuke V2] Rogue Webhook Auto-Deleted")
+                if del_ok:
+                    logger.info("[Recovery] ⚡ Instantly deleted rogue webhook %s via Turbo REST in guild %s (%.2fms)", webhook_id, guild.id, (time.perf_counter() - t_start) * 1000)
+                    return RecoveryResult(
+                        success=True,
+                        resource_type="webhook",
+                        original_id=webhook_id,
+                        reason="rogue_webhook_deleted",
+                        duration_ms=(time.perf_counter() - t_start) * 1000,
+                    )
             if hasattr(guild, "_state") and hasattr(guild._state, "http"):
                 http = guild._state.http
                 if hasattr(http, "delete_webhook") and callable(getattr(http, "delete_webhook")):
