@@ -118,6 +118,20 @@ def _run_git_pull() -> tuple[bool, str, bool]:
             return False, f"Could not inspect fetched commit: {remote_head}", False
         if old_head.strip() == remote_head.strip():
             return True, "Already up to date.", False
+        ancestor_code, _ = run_git_command(
+            ["git", "merge-base", "--is-ancestor", remote_head.strip(), old_head.strip()],
+            cwd=root_dir,
+            timeout=10,
+        )
+        if ancestor_code == 0:
+            return True, "Local checkout already contains origin; no update or restart is needed.", False
+        ancestor_code, _ = run_git_command(
+            ["git", "merge-base", "--is-ancestor", old_head.strip(), remote_head.strip()],
+            cwd=root_dir,
+            timeout=10,
+        )
+        if ancestor_code != 0:
+            return False, "Update stopped: local and remote branches have diverged. Reconcile them manually; no reset or force-pull was run.", False
         merge_code, merge_output = run_git_command(["merge", "--ff-only", "FETCH_HEAD"], cwd=root_dir, timeout=120)
         if merge_code != 0:
             return False, f"Update stopped: Git could not fast-forward safely. No reset or force-pull was run. {merge_output}", False
