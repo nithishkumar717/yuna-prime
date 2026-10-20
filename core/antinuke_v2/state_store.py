@@ -61,7 +61,7 @@ DASHBOARD_KEY_TO_ACTION_COL = {v: k for k, v in ACTION_COL_TO_DASHBOARD_KEY.item
 class GuildSecurityConfig:
     """Per-guild isolated security configuration held entirely in RAM."""
     guild_id: int
-    antinuke_enabled: bool = True
+    antinuke_enabled: bool = False
     log_channel_id: Optional[int] = None
     action_toggles: Dict[str, bool] = field(default_factory=dict)
     action_thresholds: Dict[str, Tuple[int, int]] = field(default_factory=dict)
@@ -70,7 +70,7 @@ class GuildSecurityConfig:
     whitelisted_roles: Set[int] = field(default_factory=set)
     whitelisted_bots: Set[int] = field(default_factory=set)
     extra_owners: Set[int] = field(default_factory=set)
-    bot_protection_enabled: bool = True
+    bot_protection_enabled: bool = False
     bot_protection_action: str = "BAN_BOT_AND_INVITER"
     dry_run: bool = False
     rate_limiter: Optional[Any] = None
@@ -217,6 +217,16 @@ class V2StateStore:
             (guild_id, 1 if enabled else 0, cfg.log_channel_id)
         )
 
+    def set_bot_protection_status(self, guild_id: int, enabled: bool) -> None:
+        """Immediately mutates RAM and schedules write-through for bot protection."""
+        self._loaded_guilds.add(guild_id)
+        cfg = self.get_guild_config(guild_id)
+        cfg.bot_protection_enabled = bool(enabled)
+        self._dispatch_write(
+            "INSERT OR REPLACE INTO bot_protection (guild_id, status) VALUES (?, ?)",
+            (guild_id, 1 if enabled else 0)
+        )
+
     def set_log_channel(self, guild_id: int, channel_id: Optional[int]) -> None:
         self._loaded_guilds.add(guild_id)
         cfg = self.get_guild_config(guild_id)
@@ -350,6 +360,20 @@ class V2StateStore:
                     if row:
                         cfg.antinuke_enabled = bool(row[0] == 1)
                         cfg.log_channel_id = row[1]
+                    else:
+                        cfg.antinuke_enabled = False
+                        cfg.log_channel_id = None
+
+                # 1b. Bot protection status
+                try:
+                    async with db.execute("SELECT status FROM bot_protection WHERE guild_id = ? OR guild_id = ?", (guild_id, str(guild_id))) as cur:
+                        bp_row = await cur.fetchone()
+                        if bp_row is not None:
+                            cfg.bot_protection_enabled = bool(str(bp_row[0]).lower() in ("1", "true", "on"))
+                        else:
+                            cfg.bot_protection_enabled = False
+                except Exception:
+                    cfg.bot_protection_enabled = False
 
                 # 2. Whitelisted roles
                 async with db.execute("SELECT role_id FROM whitelisted_roles WHERE guild_id = ?", (guild_id,)) as cur:
@@ -431,6 +455,16 @@ class V2StateStore:
                                 loaded_count += 1
                 except Exception as e:
                     logger.debug("[V2State] warm_load antinuke note: %s", e)
+
+                # 1b. Bot protection status
+                try:
+                    async with db.execute("SELECT guild_id, status FROM bot_protection") as cur:
+                        rows = await cur.fetchall()
+                        for gid, status in rows:
+                            if gid:
+                                self.get_guild_config(int(gid)).bot_protection_enabled = bool(str(status).lower() in ("1", "true", "on"))
+                except Exception as e:
+                    logger.debug("[V2State] warm_load bot_protection note: %s", e)
 
                 # 2. Whitelisted roles
                 try:

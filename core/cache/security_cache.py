@@ -640,6 +640,11 @@ class SecurityStateCache:
         gid = int(guild_id)
         self._bot_protection[gid] = bool(enabled)
         self._loaded_guilds.add(gid)
+        try:
+            from core.antinuke_v2.router import v2_engine_router
+            v2_engine_router.coordinator.state_store.set_bot_protection_status(gid, enabled)
+        except Exception:
+            pass
 
     def get_whitelisted_bots(self, guild_id: int | str) -> Set[int]:
         """Returns a copy of the whitelisted bot IDs set for a guild, including trusted sibling bots."""
