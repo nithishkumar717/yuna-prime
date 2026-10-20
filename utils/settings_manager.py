@@ -6,13 +6,13 @@ import threading
 import atexit
 import time
 from typing import Any, Dict, Optional
-from utils.config import MONGO_DATABASE_NAME
+from utils.config import DEFAULT_PREFIX, MONGO_DATABASE_NAME
 
 LOCAL_SETTINGS_PATH = os.path.join("db", "local_settings.json")
 BACKUP_SETTINGS_PATH = os.path.join("db", "local_settings.json.bak")
 
 DEFAULT_GUILD_SETTINGS = {
-    "prefix": "$",
+    "prefix": DEFAULT_PREFIX,
     "vc_247": None,            # {"channel_id": int, "text_channel_id": int}
     "autoplay": False,
     "autoplay_lang": "auto",
@@ -79,7 +79,7 @@ DEFAULT_GUILD_SETTINGS = {
 }
 
 DEFAULT_BOT_SETTINGS = {
-    "default_prefix": "$",
+    "default_prefix": DEFAULT_PREFIX,
     "embed_color": 0x9B59B6,
     "maintenance_mode": False,
     "max_queue_size": 250,

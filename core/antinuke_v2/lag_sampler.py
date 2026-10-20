@@ -11,12 +11,18 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+import os
 import time
 from collections import deque
 from dataclasses import dataclass
 from typing import Any, Deque, Dict, List, Optional, Tuple
 
 logger = logging.getLogger("antinuke.v2.lag_sampler")
+
+
+def _debug_enabled() -> bool:
+    """Return whether verbose diagnostics are enabled in the environment."""
+    return os.getenv("DEBUG", "false").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def calculate_percentile(data: List[float], p: float) -> float:
@@ -101,7 +107,7 @@ class EventLoopLagSampler:
         self._running = True
         self._target_time = self._loop.time() + self.interval_seconds
         self._handle = self._loop.call_at(self._target_time, self._on_tick)
-        logger.info("[EventLoopLagSampler] Started 10ms event loop lag monitoring (spike threshold: %.1fms)", self.spike_threshold_ms)
+        logger.debug("[EventLoopLagSampler] Started 10ms event loop lag monitoring (spike threshold: %.1fms)", self.spike_threshold_ms)
 
     def stop(self) -> None:
         """Stops the sampling timer."""
@@ -109,7 +115,7 @@ class EventLoopLagSampler:
         if self._handle is not None:
             self._handle.cancel()
             self._handle = None
-        logger.info("[EventLoopLagSampler] Stopped event loop lag monitoring")
+        logger.debug("[EventLoopLagSampler] Stopped event loop lag monitoring")
 
     def _on_tick(self) -> None:
         if not self._running or self._loop is None:
@@ -123,14 +129,16 @@ class EventLoopLagSampler:
 
         # Log any single lag spike over 50 ms with task introspection
         if lag_ms > self.spike_threshold_ms:
-            running_tasks = self._inspect_running_tasks()
+            debug_enabled = _debug_enabled()
+            running_tasks = self._inspect_running_tasks() if debug_enabled else []
             spike = LagSpikeRecord(
                 timestamp=time.time(),
                 lag_ms=lag_ms,
                 running_tasks=running_tasks,
             )
             self._spikes.append(spike)
-            logger.warning(spike.to_log_string())
+            if debug_enabled:
+                logger.warning(spike.to_log_string())
 
         # Schedule next tick precisely 10 ms from now
         self._target_time = now + self.interval_seconds

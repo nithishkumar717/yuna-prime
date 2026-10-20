@@ -98,28 +98,25 @@ def updateignore(guild_id, data):
 
 async def getConfig(guildID):
     from utils.settings_manager import settings
-    # 1. Instant local settings cache check (Zero delay)
-    cached_prefix = settings.get_guild_setting(guildID, "prefix", default=None)
-    if cached_prefix:
-        return {"prefix": cached_prefix}
+    from utils.config import DEFAULT_PREFIX
 
-    # 2. Database query with safe fallback
+    # The prefixes table is the source of truth for explicit guild prefixes.
+    # SettingsManager supplies defaults for every setting, so reading its prefix
+    # first can mask DEFAULT_PREFIX with a stale hard-coded value.
     try:
         async with aiosqlite.connect('db/prefix.db', timeout=3.0) as db:
             async with db.execute("SELECT prefix FROM prefixes WHERE guild_id = ?", (guildID,)) as cursor:
                 row = await cursor.fetchone()
-                if row:
+                if row and isinstance(row[0], str) and row[0]:
                     prefix = row[0]
                     settings.set_guild_setting(guildID, "prefix", prefix)
                     return {"prefix": prefix}
     except Exception as e:
         print(f"[DB FALLBACK] SQLite prefix fetch error for {guildID}: {e}")
 
-    # 3. Default fallback
-    from utils.config import DEFAULT_PREFIX
-    default_prefix = DEFAULT_PREFIX
-    settings.set_guild_setting(guildID, "prefix", default_prefix)
-    return {"prefix": default_prefix}
+    # No explicit per-guild prefix (or database unavailable): honor the env default.
+    settings.set_guild_setting(guildID, "prefix", DEFAULT_PREFIX)
+    return {"prefix": DEFAULT_PREFIX}
 
 async def updateConfig(guildID, data):
     from utils.settings_manager import settings
