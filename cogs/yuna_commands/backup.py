@@ -23,7 +23,8 @@ def _sync_backup_to_cloud_worker(snapshot: Dict[str, Any]):
         client = create_resilient_mongo_client(uri, timeout_ms=4000)
         if not client:
             return
-        db = client.get_default_database() or client["yuna_backups"]
+        from utils.config import MONGO_DATABASE_NAME
+        db = client[f"{MONGO_DATABASE_NAME}_backups"]
         coll = db["server_structure_snapshots"]
         coll.replace_one(
             {"id": snapshot["id"], "guild_id": snapshot["guild_id"]},

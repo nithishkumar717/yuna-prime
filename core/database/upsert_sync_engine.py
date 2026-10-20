@@ -1,3 +1,4 @@
+from utils.config import MONGO_DATABASE_NAME
 """
 YUNA Enterprise SQLite to MongoDB Incremental Upsert Synchronization Engine
 Provides living-document database synchronization, anti-mismatch reconciliation,
@@ -302,268 +303,11 @@ def sync_sqlite_to_mongo(mongo_client: MongoClient, db_dir: str = "db") -> Dict[
         return {"synced": False, "reason": "db directory or mongo_client missing"}
 
     checkpoint_all_dbs(db_dir)
-    target_db = mongo_client["yuna_db"]
+    target_db = mongo_client[MONGO_DATABASE_NAME]
     meta_coll = target_db["_sync_metadata"]
 
     # Connect to dedicated music cluster if configured
     music_target_db = None
-    music_uri = os.getenv("MUSIC_MONGODB_URI") or os.getenv("MUSIC_MONGO_URI")
-    if music_uri:
-        try:
-            m_client = create_resilient_mongo_client(music_uri)
-            if m_client:
-                music_target_db = m_client["yunamusic"]
-        except Exception:
-            pass
-
-    unix_ts, timestamp_ist = get_current_time_ist()
-    total_upserted = 0
-    total_deleted = 0
-    skipped_tables = 0
-    synced_tables = 0
-
-    for filename in sorted(os.listdir(db_dir)):
-        if not filename.endswith(".db") or filename in BYPASSED_DATABASES:
-            continue
-
-        db_prefix = filename[:-3]  # e.g. "anti" from "anti.db"
-        db_path = os.path.join(db_dir, filename)
-
-        conn = None
-        try:
-            conn = sqlite3.connect(db_path, timeout=60.0)
-            conn.row_factory = sqlite3.Row
-            conn.execute("PRAGMA busy_timeout = 60000;")
-            conn.execute("PRAGMA journal_mode = WAL;")
-            conn.execute("PRAGMA synchronous = NORMAL;")
-            cursor = conn.cursor()
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
-            tables = [r[0] for r in cursor.fetchall() if r[0] not in BYPASSED_TABLES]
-
-            tables_data = []
-
-            for table_name in tables:
-                cache_key = f"{filename}:{table_name}"
-                current_sig = compute_table_signature(conn, table_name)
-
-                # Check if table changed since last sync
-                if cache_key in _TABLE_CHECKSUM_CACHE and _TABLE_CHECKSUM_CACHE[cache_key] == current_sig:
-                    skipped_tables += 1
-                    continue
-
-                all_cols, pk_cols, col_types = get_table_metadata(conn, table_name)
-
-                # Self-healing bloat defender: prune excess or duplicate rows in local SQLite
-                if table_name in BLOAT_DEFENDER_CAPS:
-                    cap = BLOAT_DEFENDER_CAPS[table_name]
-                    try:
-                        del_cur = conn.execute(
-                            f'DELETE FROM "{table_name}" WHERE rowid NOT IN (SELECT rowid FROM "{table_name}" ORDER BY rowid DESC LIMIT {cap});'
-                        )
-                        if del_cur.rowcount > 0:
-                            conn.commit()
-                            print(f"[BLOAT DEFENDER] Trimmed {del_cur.rowcount} old rows in {filename} -> {table_name} (cap={cap})")
-                            current_sig = compute_table_signature(conn, table_name)
-                    except Exception:
-                        pass
-                else:
-                    group_cols = ", ".join(f'"{c}"' for c in (pk_cols if pk_cols else all_cols))
-                    if group_cols:
-                        try:
-                            del_cur = conn.execute(
-                                f'DELETE FROM "{table_name}" WHERE rowid NOT IN (SELECT MAX(rowid) FROM "{table_name}" GROUP BY {group_cols});'
-                            )
-                            if del_cur.rowcount > 0:
-                                conn.commit()
-                                print(f"[BLOAT DEFENDER] Self-healed {del_cur.rowcount} duplicate rows in {filename} -> {table_name}")
-                                current_sig = compute_table_signature(conn, table_name)
-                        except Exception:
-                            pass
-
-                # Query rows (always bounded by BLOAT_DEFENDER_CAPS or DEFAULT_MAX_TABLE_SYNC_ROWS)
-                row_limit = BLOAT_DEFENDER_CAPS.get(table_name, DEFAULT_MAX_TABLE_SYNC_ROWS)
-                cursor.execute(f'SELECT rowid AS _sync_rowid, * FROM "{table_name}" ORDER BY rowid DESC LIMIT {row_limit};')
-
-                raw_rows = cursor.fetchall()
-                row_dicts_with_meta = []
-                for row in raw_rows:
-                    row_data = {col: sanitize_value_for_mongo(row[col]) for col in all_cols}
-                    row_dicts_with_meta.append((row["_sync_rowid"], row_data))
-
-                tables_data.append({
-                    "table_name": table_name,
-                    "cache_key": cache_key,
-                    "current_sig": current_sig,
-                    "all_cols": all_cols,
-                    "pk_cols": pk_cols,
-                    "col_types": col_types,
-                    "rows": row_dicts_with_meta
-                })
-
-            cursor.close()
-            conn.close()
-            conn = None
-
-            # Execute MongoDB bulk operations outside of the SQLite connection
-            for tdata in tables_data:
-                table_name = tdata["table_name"]
-                cache_key = tdata["cache_key"]
-                current_sig = tdata["current_sig"]
-                all_cols = tdata["all_cols"]
-                pk_cols = tdata["pk_cols"]
-                col_types = tdata["col_types"]
-                rows = tdata["rows"]
-
-                coll_name = f"{db_prefix}_{table_name}"
-                coll = music_target_db[coll_name] if (db_prefix == "playlists" and music_target_db is not None) else target_db[coll_name]
-
-                table_row_hashes = _ROW_HASH_CACHE.setdefault(cache_key, {})
-                pending_row_hashes: Dict[str, str] = {}
-                bulk_ops = []
-                active_ids: Set[str] = set()
-                seen_batch_ids: Set[str] = set()
-
-                for rowid, row_dict in rows:
-                    doc_id = get_deterministic_doc_id(row_dict, pk_cols, rowid)
-                    active_ids.add(doc_id)
-
-                    if doc_id in seen_batch_ids:
-                        continue
-                    seen_batch_ids.add(doc_id)
-
-                    row_hash = hashlib.sha1(
-                        json.dumps(row_dict, sort_keys=True, default=str).encode("utf-8")
-                    ).hexdigest()
-                    pending_row_hashes[doc_id] = row_hash
-
-                    # Skip unchanged rows so only true deltas are sent to MongoDB
-                    if table_row_hashes.get(doc_id) == row_hash:
-                        continue
-
-                    # Attach UTC datetime object for native MongoDB TTL index support
-                    doc_created_dt = datetime.datetime.fromtimestamp(unix_ts, tz=datetime.timezone.utc)
-                    doc = {
-                        "_id": doc_id,
-                        "_table_meta": {
-                            "db_file": filename,
-                            "table_name": table_name,
-                            "pk_cols": pk_cols,
-                            "col_types": col_types
-                        },
-                        "_updated_at_ist": timestamp_ist,
-                        "_updated_at_unix": unix_ts,
-                        "_ttl_timestamp": doc_created_dt,
-                        **row_dict
-                    }
-                    bulk_ops.append(UpdateOne({"_id": doc_id}, {"$set": doc}, upsert=True))
-
-                # Execute in-place bulk upsert in safe chunks of 200 to avoid Atlas socket timeouts
-                if bulk_ops:
-                    chunk_size = 200
-                    for idx in range(0, len(bulk_ops), chunk_size):
-                        batch = bulk_ops[idx:idx + chunk_size]
-                        res = coll.bulk_write(batch, ordered=False)
-                        upserted_count = res.upserted_count + res.modified_count
-                        total_upserted += upserted_count
-
-                # Update row hash cache only after bulk_write succeeds
-                _ROW_HASH_CACHE[cache_key] = pending_row_hashes
-
-                # Ensure native MongoDB TTL index exists on this collection if configured
-                if coll_name not in _ENSURED_INDEX_COLLECTIONS:
-                    if table_name in RETENTION_POLICY_DAYS:
-                        try:
-                            ttl_seconds = RETENTION_POLICY_DAYS[table_name] * 86400
-                            coll.create_index("_ttl_timestamp", expireAfterSeconds=ttl_seconds, background=True)
-                        except Exception:
-                            pass
-                    _ENSURED_INDEX_COLLECTIONS.add(coll_name)
-
-                # Enforce active row count caps (Bloat Defender) using indexed _id lookups only
-                if table_name in BLOAT_DEFENDER_CAPS:
-                    cap = BLOAT_DEFENDER_CAPS[table_name]
-                    cloud_count = coll.estimated_document_count()
-                    if cloud_count > cap:
-                        stale_docs = list(coll.find({"_id": {"$nin": list(active_ids)}}, {"_id": 1}).limit(500))
-                        if stale_docs:
-                            del_ids = [d["_id"] for d in stale_docs]
-                            del_res = coll.delete_many({"_id": {"$in": del_ids}})
-                            total_deleted += del_res.deleted_count
-                elif table_name not in NEVER_PURGE_TABLES:
-                    cloud_count = coll.estimated_document_count()
-                    if cloud_count > len(active_ids):
-                        if active_ids:
-                            stale_docs = list(coll.find({"_id": {"$nin": list(active_ids)}}, {"_id": 1}).limit(500))
-                            if stale_docs:
-                                del_ids = [d["_id"] for d in stale_docs]
-                                del_res = coll.delete_many({"_id": {"$in": del_ids}})
-                                total_deleted += del_res.deleted_count
-                        else:
-                            del_res = coll.delete_many({})
-                            total_deleted += del_res.deleted_count
-
-                _TABLE_CHECKSUM_CACHE[cache_key] = current_sig
-                synced_tables += 1
-
-        except Exception as e:
-            print(f"[UPSERT SYNC ERROR] {filename}: {e}")
-        finally:
-            if conn:
-                try:
-                    conn.close()
-                except Exception:
-                    pass
-
-    # Record sync metadata
-    meta_coll.update_one(
-        {"_id": "live_sync_status"},
-        {"$set": {
-            "last_sync_ist": timestamp_ist,
-            "last_sync_unix": unix_ts,
-            "synced_tables": synced_tables,
-            "skipped_tables": skipped_tables,
-            "total_upserted": total_upserted,
-            "total_deleted": total_deleted
-        }},
-        upsert=True
-    )
-
-    return {
-        "synced": True,
-        "timestamp_ist": timestamp_ist,
-        "synced_tables": synced_tables,
-        "skipped_tables": skipped_tables,
-        "total_upserted": total_upserted,
-        "total_deleted": total_deleted
-    }
-
-
-# ==============================================================================
-# 2. STARTUP ANTI-MISMATCH RECONCILIATION (MongoDB #1 -> SQLite)
-# ==============================================================================
-
-def reconcile_sqlite_with_mongo(mongo_client: MongoClient, db_dir: str = "db") -> Tuple[bool, str, int]:
-    """
-    Runs on bot startup before event listeners start.
-    Inspects existing SQLite databases against MongoDB collections in yuna_db.
-    If MongoDB has newer records or missing data, reconciles them into local SQLite
-    with microsecond in-memory safety rollback to prevent data mismatch or corruption.
-    Returns: (reconciled: bool, status_message: str, updated_rows_count: int)
-    """
-    if mongo_client is None:
-        return False, "MongoDB client is not connected", 0
-
-    os.makedirs(db_dir, exist_ok=True)
-    target_dbs = [mongo_client["yuna_db"]]
-    music_uri = os.getenv("MUSIC_MONGODB_URI") or os.getenv("MUSIC_MONGO_URI")
-    if music_uri:
-        try:
-            m_client = create_resilient_mongo_client(music_uri)
-            if m_client:
-                target_dbs.append(m_client["yunamusic"])
-        except Exception:
-            pass
-
     reconcile_count = 0
 
     for current_target_db in target_dbs:
@@ -732,7 +476,7 @@ def sync_daily_vault(mongo_client_2: MongoClient, mongo_client_1: MongoClient, r
     timestamp_ist = now_ist.strftime("%d-%m-%Y %I:%M:%S %p IST")
 
     target_dbname = f"yuna_backup_{date_tag}"
-    source_db = mongo_client_1["yuna_db"]
+    source_db = mongo_client_1[MONGO_DATABASE_NAME]
     target_db = mongo_client_2[target_dbname]
 
     copied_collections = 0
@@ -836,7 +580,7 @@ def get_cluster_metrics(mongo_client_1: Optional[MongoClient], mongo_client_2: O
             t0 = time.perf_counter()
             mongo_client_1.admin.command("ping")
             p_ms = (time.perf_counter() - t0) * 1000
-            db1 = mongo_client_1["yuna_db"]
+            db1 = mongo_client_1[MONGO_DATABASE_NAME]
             colls = [c for c in db1.list_collection_names() if not c.startswith("_")]
             doc_sum = sum(db1[c].count_documents({}) for c in colls[:15])  # Sample top collections
             meta = db1["_sync_metadata"].find_one({"_id": "live_sync_status"}) or {}
@@ -866,25 +610,5 @@ def get_cluster_metrics(mongo_client_1: Optional[MongoClient], mongo_client_2: O
             }
         except Exception as e:
             metrics["db2"]["status"] = f"Error: {e}"
-
-    music_uri = os.getenv("MUSIC_MONGODB_URI") or os.getenv("MUSIC_MONGO_URI")
-    if music_uri:
-        try:
-            m_client = create_resilient_mongo_client(music_uri)
-            if m_client:
-                t0 = time.perf_counter()
-                m_client.admin.command("ping")
-                p_ms = (time.perf_counter() - t0) * 1000
-                mdb = m_client["yunamusic"]
-                m_colls = [c for c in mdb.list_collection_names() if not c.startswith("_")]
-                m_docs = sum(mdb[c].count_documents({}) for c in m_colls)
-                metrics["music_db"] = {
-                    "status": "Online (Music Cloud)",
-                    "ping_ms": round(p_ms, 1),
-                    "collections": len(m_colls),
-                    "documents": m_docs
-                }
-        except Exception as e:
-            metrics["music_db"] = {"status": f"Error: {e}"}
 
     return metrics

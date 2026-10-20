@@ -57,7 +57,8 @@ def get_mongo_db() -> Optional[Any]:
 
     if _MONGO_CLIENT_CACHE is not None:
         try:
-            return _MONGO_CLIENT_CACHE["yuna_db"]
+            from utils.config import MONGO_DATABASE_NAME
+            return _MONGO_CLIENT_CACHE[MONGO_DATABASE_NAME]
         except Exception:
             _MONGO_CLIENT_CACHE = None
 
@@ -65,7 +66,8 @@ def get_mongo_db() -> Optional[Any]:
         from utils.settings_manager import server_settings
         if getattr(server_settings, "mongo_client", None) is not None:
             _MONGO_CLIENT_CACHE = server_settings.mongo_client
-            return _MONGO_CLIENT_CACHE["yuna_db"]
+            from utils.config import MONGO_DATABASE_NAME
+            return _MONGO_CLIENT_CACHE[MONGO_DATABASE_NAME]
     except Exception:
         pass
 
@@ -77,7 +79,8 @@ def get_mongo_db() -> Optional[Any]:
         client = create_resilient_mongo_client(uri, timeout_ms=5000)
         if client:
             _MONGO_CLIENT_CACHE = client
-            return client["yuna_db"]
+            from utils.config import MONGO_DATABASE_NAME
+            return client[MONGO_DATABASE_NAME]
     except Exception as e:
         print(f"[BILLING MONGO WARNING] Failed to connect to MongoDB: {e}")
         _MONGO_CLIENT_FAIL_TIME = time.time()

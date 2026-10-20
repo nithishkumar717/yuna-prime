@@ -49,9 +49,7 @@ def is_sibling_bot(user_or_id) -> bool:
 BotName = "YUNΛ"
 serverLink = "https://discord.gg/YzHCx5yQXv"
 
-# Spotify API Configuration (Client Credentials)
-SPOTIFY_CLIENT_ID = os.environ.get("SPOTIFY_CLIENT_ID") or "9f951e94c6a941b48b9c1ae09a3ede78"
-SPOTIFY_CLIENT_SECRET = os.environ.get("SPOTIFY_CLIENT_SECRET") or "e0c83cfa9be54558a1c0a0cfa5f2ab3b"
-
-
-
+# ==============================================================================
+# DATABASE ISOLATION (YUNA PRIME DEDICATED DATABASE)
+# ==============================================================================
+MONGO_DATABASE_NAME = os.environ.get("MONGODB_DB_NAME") or os.environ.get("MONGO_DB_NAME") or "yuna_prime_db"

@@ -1,3 +1,4 @@
+from utils.config import MONGO_DATABASE_NAME
 """
 YUNA Cloud Database Backup & Disaster Recovery Engine
 Integrates SQLite with MongoDB Atlas to provide zero-command, change-driven cloud persistence.
@@ -193,11 +194,11 @@ def save_snapshot_to_mongo(
     reason: str = "Database update detected"
 ) -> Dict[str, Any]:
     """
-    Saves a compressed snapshot document into MongoDB Atlas (yuna_db.database_snapshots).
+    Saves a compressed snapshot document into MongoDB Atlas (database_snapshots (isolated)).
     Stamps with IST timezone, sets is_latest=True, and automatically prunes snapshots older
     than the last 5 versions so MongoDB storage remains lightweight.
     """
-    db = client["yuna_db"]
+    db = client[MONGO_DATABASE_NAME]
     coll = db["database_snapshots"]
 
     unix_ts, timestamp_ist = get_current_time_ist()
@@ -241,14 +242,14 @@ def save_snapshot_to_mongo(
 
 def check_and_auto_restore_from_mongo(client: MongoClient, db_dir: str = "db") -> Tuple[bool, str, Optional[str], int]:
     """
-    Startup Auto-Recovery: Checks MongoDB Atlas yuna_db.database_snapshots.
+    Startup Auto-Recovery: Checks MongoDB Atlas database_snapshots (isolated).
     If the cloud snapshot is newer than local files (e.g. VPS was deleted and PC codebase was deployed),
     it automatically extracts the SQLite databases into db/ and verifies integrity with PRAGMA integrity_check.
     
     Returns: (restored: bool, message: str, timestamp_ist: Optional[str], files_count: int)
     """
     try:
-        db = client["yuna_db"]
+        db = client[MONGO_DATABASE_NAME]
         coll = db["database_snapshots"]
 
         latest_snap = coll.find_one({"is_latest": True})
@@ -355,7 +356,7 @@ def restore_single_db_from_mongo(client: MongoClient, db_name: str, db_dir: str 
     and runs PRAGMA integrity_check on the restored file.
     """
     try:
-        db = client["yuna_db"]
+        db = client[MONGO_DATABASE_NAME]
         coll = db["database_snapshots"]
         latest_snap = coll.find_one({"is_latest": True}) or coll.find_one(sort=[("timestamp_unix", DESCENDING)])
         if not latest_snap or "payload" not in latest_snap:

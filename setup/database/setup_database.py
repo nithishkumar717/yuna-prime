@@ -56,7 +56,8 @@ class MongoDBClient:
             DatabaseLogger.info(f"Connecting to MongoDB (Attempt {attempt}/{retries})...", event="Connecting")
             try:
                 self.client = AsyncIOMotorClient(uri, serverSelectionTimeoutMS=5000)
-                self.db = self.client.get_database("yuna_db")
+                from utils.config import MONGO_DATABASE_NAME
+                self.db = self.client.get_database(MONGO_DATABASE_NAME)
                 await self.client.server_info()
                 DatabaseLogger.info("MongoDB connected successfully.", event="Connected")
                 return
@@ -158,7 +159,7 @@ Repositories must extend `BaseRepository` and supply the explicit Pydantic model
 ```python
 class UserRepository(BaseRepository[UserModel]):
     def __init__(self, db: MongoDBClient):
-        super().__init__(db.client.get_database("yuna_db")["users"], UserModel)
+        super().__init__(db.client.get_database("yuna_prime_db")["users"], UserModel)
 ```
 '''
 

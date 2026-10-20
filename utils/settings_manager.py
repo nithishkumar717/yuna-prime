@@ -6,6 +6,7 @@ import threading
 import atexit
 import time
 from typing import Any, Dict, Optional
+from utils.config import MONGO_DATABASE_NAME
 
 LOCAL_SETTINGS_PATH = os.path.join("db", "local_settings.json")
 BACKUP_SETTINGS_PATH = os.path.join("db", "local_settings.json.bak")
@@ -184,7 +185,7 @@ class SettingsManager:
                     connect=True
                 )
                 self.mongo_client.admin.command('ping')
-                self.mongo_collection = self.mongo_client["yuna_db"]["guild_settings"]
+                self.mongo_collection = self.mongo_client[MONGO_DATABASE_NAME]["guild_settings"]
         except Exception as e:
             self.mongo_client = None
             self.mongo_collection = None
