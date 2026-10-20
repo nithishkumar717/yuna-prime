@@ -55,9 +55,10 @@ SAAS_HELP_DATA: Dict[str, Dict[str, Any]] = {
             "Threat Filters": {
                 "desc": "Instant automated action against high-frequency spam and malicious exploits.",
                 "commands": [
-                    "automod", "antispam <enable/disable>", "anticaps <enable/disable>", "antilink <enable/disable>",
-                    "antiinvite <enable/disable>", "anti_mass_mention <enable/disable>",
-                    "anti_emoji_spam <enable/disable>", "antieveryone <enable/disable>"
+                    "automod", "antispam <enable/disable/config>", "anticaps <enable/disable/config>",
+                    "antilink <enable/disable/config>", "antiinvite <enable/disable/config>",
+                    "antimention <enable/disable/config>", "antiemoji <enable/disable/config>",
+                    "antieveryone <enable/disable>"
                 ]
             },
             "Word Filter": {

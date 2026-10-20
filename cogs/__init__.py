@@ -13,6 +13,7 @@ from .yuna_commands.extraown import Extraowner
 from .yuna_commands.whitelist_bot import BotWhitelist
 from .yuna_commands.automod import Automod
 from .yuna_commands.antiraid import AntiRaidCommands
+from .yuna_commands.security_filters import SecurityFilterCommands
 from .yuna_commands.nightmode import Nightmode
 from .yuna_commands.emergency import Emergency
 from .yuna_commands.security_dashboard import SecurityDashboard
@@ -99,6 +100,7 @@ async def setup(bot: BotBase):
         # Core Security & Access Control
         Antinuke, Whitelist, Unwhitelist, Extraowner, BotWhitelist,
         AntiRaidCommands, Automod, Nightmode, Emergency, SecurityDashboard, AuditTools,
+        SecurityFilterCommands,
         ServerLogs, Blacklist, Owner, GitPull, ServerBackup, Ping,
         
         # Security Guides
