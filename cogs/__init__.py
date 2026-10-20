@@ -27,6 +27,11 @@ from .yuna_commands.stickymessage import StickyMessage
 from .yuna_commands.autorole import AutoRole
 from .yuna_commands.autoresponder import AutoResponder
 from .yuna_commands.autoreact import AutoReaction
+from .yuna_commands.ticket import TicketCog
+from .yuna_commands.verification import Verification
+from .yuna_commands.giveaway import Giveaway
+from .yuna_commands.Birthday import Birthdays
+from .yuna_commands.booster import Booster
 
 # Extra Help / Guide Cogs
 from .yuna_extra_commands.antinuke import _antinuke
@@ -35,6 +40,11 @@ from .yuna_extra_commands.moderation import _moderation
 from .yuna_extra_commands.welcome import _welcome
 from .yuna_extra_commands.joindm import _joindm
 from .yuna_extra_commands.sticky import _sticky
+from .yuna_extra_commands.ticket import _ticket
+from .yuna_extra_commands.verify import _verify
+from .yuna_extra_commands.giveaway import _giveaway
+from .yuna_extra_commands.birth import _birth
+from .yuna_extra_commands.booster import __boost
 
 # Events
 from .yuna_events.Errors import Errors
@@ -106,8 +116,15 @@ async def setup(bot: BotBase):
         # Server Automation & Greeting Commands
         Welcomer, FastGreet, joindm, StickyMessage, AutoRole, AutoResponder, AutoReaction,
         
+        # Tickets & Member Verification
+        TicketCog, Verification,
+        
+        # Community & Celebrations
+        Giveaway, Birthdays, Booster,
+        
         # Guide Helpers
         _antinuke, _automod, _moderation, _welcome, _joindm, _sticky,
+        _ticket, _verify, _giveaway, _birth, __boost,
         
         # Events & Handlers
         Errors, AutoBlacklist, Guild,
