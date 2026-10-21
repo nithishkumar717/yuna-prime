@@ -303,6 +303,7 @@ class DetectionCoordinator:
         # 8. Act on decision (with dry_run and trace recording)
         if decision.is_punish and decision.punishment:
             if getattr(state, "dry_run", False):
+                # ... (keep dry run logic)
                 logger.info(
                     "[V2-DRY-RUN] What V2 would do: Neutralize actor %s for action %s (Reason: %s)",
                     actor_id, action_code, decision.reason_code
@@ -319,63 +320,44 @@ class DetectionCoordinator:
                 self.incident_tracker.set_containment_result(guild_id, action_code, target_id, result)
                 return result
 
+            # --- HIGH SPEED DISPATCH PATH ---
+            # We dispatch the punishment immediately. We do NOT wait for it to complete 
+            # before moving to recovery/notifications for high-confidence threats.
             trace.record_ban_sent()
-
+            
             # High-vigilance probation breach: escalate attack mode immediately
-            if decision.reason_code == "NEW_BOT_UNAUTHORIZED_ACTION":
+            if decision.reason_code == "NEW_BOT_UNAUTHORIZED_ACTION" or decision.reason_code == "TURBO_BAN_PREDICTION":
                 self.attack_mode.escalate_state(guild_id, state)
 
-            RECOVERY_AFTER_PUNISHMENT_ACTIONS = {
-                "chcr", "rlcr", "chup", "rlup", "chdl", "rldl", "webhook_create", "webhook_update",
-                "webhook_delete", "emodl", "mngweb", "botadd", "memup", "serverup", "vanity", "everyone",
-                "antiEveryoneMention", "ban", "unban"
-            }
-            recovery_after_punishment = action_code in RECOVERY_AFTER_PUNISHMENT_ACTIONS
-            recovery_target = getattr(entry, "target", None) or (
-                guild.get_channel(target_id)
-                if action_code in ("chdl", "chup") and target_id
-                else guild.get_role(target_id)
-                if action_code in ("rldl", "rlup") and target_id
-                else None
-            )
-            if recovery_after_punishment:
-                try:
-                    result = await self.neutralizer.execute_containment(
-                        guild=guild,
-                        actor=user,
-                        punishment=decision.punishment,
-                        reason=f"[{action_code}] {decision.reason_code}",
-                    )
-                except Exception:
-                    logger.exception("[V2] Punishment failed for actor %s in guild %s", actor_id, guild_id)
-                    result = ContainmentResult(
-                        success=False,
-                        punishment=decision.punishment,
-                        actor_id=actor_id,
-                        guild_id=guild_id,
-                        error_code="SEQUENTIAL_CONTAINMENT_ERROR",
-                    )
-                if not isinstance(result, ContainmentResult):
-                    result = ContainmentResult(
-                        success=False,
-                        punishment=decision.punishment,
-                        actor_id=actor_id,
-                        guild_id=guild_id,
-                        error_code="INVALID_CONTAINMENT_RESULT",
-                    )
-            else:
-                result = await self.neutralizer.execute_containment(
+            # We wrap the containment in a task to allow the loop to continue immediately
+            # if it's a TurboBan prediction, we prioritize the request over the result.
+            punishment_task = asyncio.create_task(
+                self.neutralizer.execute_containment(
                     guild=guild,
                     actor=user,
                     punishment=decision.punishment,
                     reason=f"[{action_code}] {decision.reason_code}",
                 )
-                if result.success and action_code in ("chdl", "rldl", "webhook_delete", "emodl"):
-                    try:
-                        loop = asyncio.get_running_loop()
-                        loop.create_task(self._execute_recovery(guild, action_code, target_id, containment_success=True))
-                    except Exception:
-                        pass
+            )
+            
+            # Parallel Recovery: Start recovery logic immediately after the ban request is sent
+            RECOVERY_AFTER_PUNISHMENT_ACTIONS = {
+                "chcr", "rlcr", "chup", "rlup", "chdl", "rldl", "webhook_create", "webhook_update",
+                "webhook_delete", "emodl", "mngweb", "botadd", "memup", "serverup", "vanity", "everyone",
+                "antiEveryoneMention", "ban", "unban"
+            }
+            if action_code in RECOVERY_AFTER_PUNISHMENT_ACTIONS:
+                recovery_target = getattr(entry, "target", None) or (
+                    guild.get_channel(target_id) if action_code in ("chdl", "chup") and target_id
+                    else guild.get_role(target_id) if action_code in ("rldl", "rlup") and target_id
+                    else None
+                )
+                # Fire-and-forget recovery
+                asyncio.create_task(self._execute_recovery(guild, action_code, target_id, containment_success=True, target_entity=recovery_target))
+
+            # Now we await the result only for the sake of the return value and trace
+            result = await punishment_task
+            
             discord_connection_warmer.record_http_activity()
             trace.record_ban_response(
                 http_status=getattr(result, "http_status", 204 if result.success else 400),
@@ -385,47 +367,26 @@ class DetectionCoordinator:
             )
             trace.finish(result="success" if result.success else "failed")
             v2_trace_aggregator.record_trace(trace)
-
-            # 1. Ban/containment result is recorded immediately (microsecond 0)
+            
             self.incident_tracker.set_containment_result(guild_id, action_code, target_id, result)
-
-            # 2. Recovery runs post-containment as a decoupled background task
-            if recovery_after_punishment and result.success:
-                try:
-                    loop = asyncio.get_running_loop()
-                    loop.create_task(
-                        self._execute_recovery(
-                            guild=guild,
-                            action_code=action_code,
-                            target_id=target_id,
-                            containment_success=result.success,
-                            target_entity=recovery_target,
-                        )
-                    )
-                except Exception as exc:
-                    logger.debug("[V2] Could not schedule post-containment recovery: %s", exc)
-
-            try:
-                loop = asyncio.get_running_loop()
-                loop.create_task(
-                    self.notifier.dispatch_incident(
-                        guild=guild,
-                        action=action_code,
-                        actor=user,
-                        target=getattr(entry, "target", None) or target_id,
-                        result=result,
-                        decision=decision,
-                        state=state,
-                        details=(
-                            f"🚨 [High-Vigilance Probation] Newly joined bot intercepted performing unauthorized {action_code.upper()}! Instantly banned & action reversed."
-                            if decision.reason_code == "NEW_BOT_UNAUTHORIZED_ACTION"
-                            else f"[{action_code}] {decision.reason_code}"
-                        ),
-                    )
+            
+            # Dispatch notification in background
+            asyncio.create_task(
+                self.notifier.dispatch_incident(
+                    guild=guild,
+                    action=action_code,
+                    actor=user,
+                    target=getattr(entry, "target", None) or target_id,
+                    result=result,
+                    decision=decision,
+                    state=state,
+                    details=(
+                        f"🚨 [Turbo-Prediction] Unauthorized bot intercepted! Instantly banned."
+                        if decision.reason_code == "TURBO_BAN_PREDICTION"
+                        else f"[{action_code}] {decision.reason_code}"
+                    ),
                 )
-            except Exception as e:
-                logger.debug("[V2Detection] Could not dispatch notifier task: %s", e)
-
+            )
             return result
         else:
             # ALLOW or ALERT_ONLY

@@ -287,8 +287,27 @@ def evaluate_policy(
             guild_id, actor_id, action_key
         )
 
-    # 13. NEW BOT VIGILANCE & THRESHOLD EVALUATION
+    # 13. TURBO BAN PREDICTION: High-Speed Bot Action Detection
+    # If the actor is a bot and we're seeing a protected action, 
+    # check if it's whitelisted. If not, this is a high-probability attack.
+    is_actor_bot = bool(getattr(actor, "bot", False) or context.actor_is_bot)
+    if is_actor_bot and actor_id not in state.whitelisted_bots:
+        # Check security cache for latest whitelist status (fast path)
+        from core.cache.security_cache import security_cache
+        if not security_cache.is_bot_whitelisted(guild_id, actor_id):
+            return _log_and_return(
+                Decision(
+                    action=DecisionAction.PUNISH,
+                    reason_code="TURBO_BAN_PREDICTION",
+                    punishment=PunishmentType.BAN,
+                    details={"prediction": "unauthorized_bot_action"},
+                ),
+                guild_id, actor_id, action_key
+            )
+
+    # 14. NEW BOT VIGILANCE & THRESHOLD EVALUATION
     is_new_bot = False
+
     if hasattr(state, "is_new_bot") and state.is_new_bot(actor_id):
         is_new_bot = True
     elif is_actor_bot:
