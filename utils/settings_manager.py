@@ -134,6 +134,11 @@ class SettingsManager:
         try:
             from dotenv import load_dotenv
             load_dotenv()
+            if os.getenv("DISABLE_MONGODB", "").strip().lower() in ("1", "true", "yes", "on"):
+                self.mongo_client = None
+                self.mongo_collection = None
+                return
+
             mongo_uri = os.getenv("MONGODB_URI")
             if mongo_uri:
                 # Pre-resolve SRV URIs once to direct seed list to eliminate runtime DNS SRV resolution

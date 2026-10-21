@@ -50,6 +50,7 @@ websiteLink = "https://zyuna.vercel.app"
 website = websiteLink
 
 # ==============================================================================
-# DATABASE ISOLATION (YUNA PRIME DEDICATED DATABASE)
+# DATABASE ISOLATION & TESTING FLAGS
 # ==============================================================================
+DISABLE_MONGODB = os.environ.get("DISABLE_MONGODB", "").strip().lower() in ("1", "true", "yes", "on")
 MONGO_DATABASE_NAME = os.environ.get("MONGODB_DB_NAME") or os.environ.get("MONGO_DB_NAME") or "yuna_prime_db"

@@ -16,6 +16,8 @@ os.makedirs(BACKUP_DIR, exist_ok=True)
 
 def _sync_backup_to_cloud_worker(snapshot: Dict[str, Any]):
     try:
+        if os.getenv("DISABLE_MONGODB", "").strip().lower() in ("1", "true", "yes", "on"):
+            return
         from core.database.upsert_sync_engine import create_resilient_mongo_client
         uri = os.getenv("PERMANENT_MONGODB_URI") or os.getenv("MONGODB_URI")
         if not uri:
