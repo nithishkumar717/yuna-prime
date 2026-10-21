@@ -476,13 +476,10 @@ def handle_raw_gateway_audit_entry(guild: discord.Guild, data: Dict[str, Any]) -
                         if coordinator.incident_tracker.is_rogue_channel(target_id):
                             logger.info("[FastPath] Suppressing channel recovery for rogue channel %s (created during raid)", target_id)
                             return
-                        # Short 350ms settling yield allows any partner bot recreate events to arrive over WebSocket
-                        await asyncio.sleep(0.35)
                         await coordinator.recovery.restore_channel(
                             guild, target_id, containment_success=containment_success
                         )
                     elif action_code == "rldl" and target_id:
-                        await asyncio.sleep(0.35)
                         await coordinator.recovery.restore_role(
                             guild, target_id, containment_success=containment_success
                         )
