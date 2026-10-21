@@ -357,6 +357,10 @@ class GuildSnapshotStore:
         # Restored mapping: (guild_id, resource_type, old_id) -> new_id
         self._restored_mapping: Dict[Tuple[int, str, int], int] = {}
 
+        # 1-Hour Snapshot Cooldown per Guild: guild_id -> monotonic timestamp of last full snapshot
+        self._last_snapshot_time: Dict[int, float] = {}
+        self.SNAPSHOT_COOLDOWN_SECONDS: float = 3600.0  # 1 Hour (3600s)
+
     def snapshot_channel(self, channel: discord.abc.GuildChannel) -> Optional[ChannelSnapshot]:
         """Snapshots a channel into RAM."""
         if not channel or not getattr(channel, "guild", None):
@@ -572,11 +576,28 @@ class GuildSnapshotStore:
             self.load_template_from_disk(guild_id)
         return list(self._roles.get(guild_id, {}).values())
 
-    def snapshot_guild(self, guild: discord.Guild) -> None:
-        """Full baseline capture of guild channels, roles, and emojis with disk & cloud DB sync."""
+    def snapshot_guild(self, guild: discord.Guild, force: bool = False) -> bool:
+        """Full baseline capture of guild channels, roles, and emojis with disk & cloud DB sync.
+        
+        Enforces a 1-hour cooldown per guild to prevent event loop lag spikes and CPU bottlenecks,
+        unless `force=True` (e.g. initial setup or manual trigger).
+        """
         if not guild:
-            return
+            return False
         gid = guild.id
+        now = time.monotonic()
+
+        if not force:
+            last_time = self._last_snapshot_time.get(gid, 0.0)
+            elapsed = now - last_time
+            if elapsed < self.SNAPSHOT_COOLDOWN_SECONDS:
+                logger.debug(
+                    "[Snapshot] Cooldown active for guild %s (%.0fs / %.0fs remaining); skipping full snapshot",
+                    gid, self.SNAPSHOT_COOLDOWN_SECONDS - elapsed, self.SNAPSHOT_COOLDOWN_SECONDS
+                )
+                return False
+
+        self._last_snapshot_time[gid] = now
         self._channels[gid] = {}
         self._roles[gid] = {}
         self._emojis[gid] = {}
@@ -607,6 +628,8 @@ class GuildSnapshotStore:
         except RuntimeError:
             self.save_template_to_disk(gid)
             self.save_template_to_db(gid)
+
+        return True
 
     def record_channel(self, guild_id: int, channel: discord.abc.GuildChannel) -> ChannelSnapshot:
         """Records a live channel directly into snapshot RAM cache on the fly."""

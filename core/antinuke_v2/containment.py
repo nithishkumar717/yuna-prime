@@ -23,6 +23,7 @@ import aiohttp
 import discord
 
 from core.antinuke_v2.models import PunishmentType
+from utils.config import SIBLING_BOT_IDS
 
 logger = logging.getLogger("antinuke.v2.containment")
 
@@ -291,6 +292,8 @@ class V2Neutralizer:
         self._neutralized_cache: Dict[Tuple[int, int], Tuple[float, ContainmentResult]] = {}
         # (guild_id, actor_id) -> asyncio.Future[ContainmentResult]
         self._in_flight: Dict[Tuple[int, int], asyncio.Future[ContainmentResult]] = {}
+        # Cooldown deduplication for emergency escalation owner alerts: (guild_id, actor_id) -> timestamp
+        self._escalation_dm_cooldown: Dict[Tuple[int, int], float] = {}
         self._lock = asyncio.Lock()
 
     def is_recently_neutralized(self, guild_id: int, actor_id: int, now: Optional[float] = None) -> Optional[ContainmentResult]:
@@ -348,6 +351,18 @@ class V2Neutralizer:
                 actor_id=actor_id or 0,
                 guild_id=guild_id or 0,
                 error_code="INVALID_GUILD_OR_ACTOR",
+            )
+
+        # 0. Sibling Bot & Client Bot Hard Shield: Immune to any containment or escalation
+        bot_id = guild.me.id if (hasattr(guild, "me") and guild.me and hasattr(guild.me, "id")) else 0
+        if actor_id in SIBLING_BOT_IDS or actor_id == bot_id:
+            logger.info("[V2Containment] Actor %s is a sibling bot or client bot; bypass containment", actor_id)
+            return ContainmentResult(
+                success=True,
+                punishment=punishment,
+                actor_id=actor_id,
+                guild_id=guild_id,
+                error_code="SIBLING_BOT_IMMUNE",
             )
 
         now = time.monotonic()
@@ -686,22 +701,83 @@ class V2Neutralizer:
             except Exception as e:
                 logger.warning("[V2Containment] Failed to timeout member during escalation: %s", e)
 
-        # 3. Emergency Owner Alert
-        owner = getattr(guild, "owner", None)
-        if owner and hasattr(owner, "send"):
-            try:
-                alert_msg = (
-                    f"⚠️ **EMERGENCY ANTI-NUKE ALERT** ⚠️\n"
-                    f"Server: **{getattr(guild, 'name', 'Unknown Server')}** (`{guild.id}`)\n"
-                    f"Offender: <@{actor.id}> (`{actor.id}`)\n"
-                    f"Action: Ban failed due to **Role Hierarchy (HTTP 403)**.\n"
-                    f"**Escalation Taken:** Stripped accessible roles and applied timeout.\n"
-                    f"**Required Action:** Move Yuna's role above all other roles in Server Settings → Roles immediately!"
-                )
-                await owner.send(alert_msg)
-                actions_taken.append("alert_owner")
-            except Exception as e:
-                logger.warning("[V2Containment] Failed to DM owner during escalation: %s", e)
+        # 3. Emergency Owner Alert (CV2 Modern Layout with 60s Burst Deduplication)
+        now = time.time()
+        dedup_key = (guild.id, actor.id)
+        last_dm_time = self._escalation_dm_cooldown.get(dedup_key, 0.0)
+
+        if (now - last_dm_time) >= 60.0:
+            self._escalation_dm_cooldown[dedup_key] = now
+            # Prune old cooldown entries
+            for k, ts in list(self._escalation_dm_cooldown.items()):
+                if now - ts > 300.0:
+                    self._escalation_dm_cooldown.pop(k, None)
+
+            owner = getattr(guild, "owner", None)
+            if not owner and hasattr(guild, "owner_id") and guild.owner_id:
+                owner = guild.get_member(guild.owner_id)
+
+            if owner and hasattr(owner, "send"):
+                try:
+                    # Construct modern Discord Components V2 (CV2) layout view
+                    from discord.ui import LayoutView, Container, TextDisplay, Separator, ActionRow, Button
+
+                    server_name = getattr(guild, "name", "Unknown Server")
+                    actor_name = getattr(actor, "display_name", getattr(actor, "name", str(actor.id)))
+                    actor_mention = getattr(actor, "mention", f"<@{actor.id}>")
+
+                    cv2_view = LayoutView(timeout=None)
+                    container = Container(accent_color=0xED4245)  # High-priority red alert
+
+                    container.add_item(TextDisplay("### ⚠️ Emergency Anti-Nuke Escalation Alert"))
+                    container.add_item(Separator(visible=True))
+                    container.add_item(TextDisplay(
+                        f"**Server:** {server_name} (`{guild.id}`)\n"
+                        f"**Target Offender:** {actor_mention} (`{actor.id}`)\n"
+                        f"**Neutralization Failure:** Ban failed due to **Role Hierarchy (HTTP 403)**.\n"
+                        f"**Mitigation Executed:** Stripped accessible roles and applied 28-day timeout."
+                    ))
+                    container.add_item(Separator(visible=True))
+                    container.add_item(TextDisplay(
+                        "**Immediate Action Required:**\n"
+                        "> Yuna's integrated role is currently positioned **below** the offender's role in role settings.\n"
+                        "> Open **Server Settings → Roles** and drag Yuna's role to the top."
+                    ))
+                    container.add_item(ActionRow(
+                        Button(
+                            label="Yuna Support & Documentation",
+                            url="https://discord.gg/YzHCx5yQXv",
+                            style=discord.ButtonStyle.link,
+                        )
+                    ))
+                    cv2_view.add_item(container)
+
+                    try:
+                        await owner.send(view=cv2_view)
+                        actions_taken.append("alert_owner_cv2")
+                    except Exception as cv2_err:
+                        logger.debug("[V2Containment] LayoutView DM failed (%s); falling back to embed", cv2_err)
+                        embed = discord.Embed(
+                            title="⚠️ Emergency Anti-Nuke Alert · Role Hierarchy",
+                            description=(
+                                f"**Server:** **{server_name}** (`{guild.id}`)\n"
+                                f"**Offender:** {actor_mention} (`{actor.id}`)\n"
+                                f"**Status:** Ban blocked by Discord Role Hierarchy (HTTP 403).\n\n"
+                                f"**Mitigation Executed:**\n"
+                                f"• Stripped administrative roles\n"
+                                f"• Applied 28-day timeout\n\n"
+                                f"**Required Fix:**\n"
+                                f"Move Yuna's role above all other roles in **Server Settings → Roles**."
+                            ),
+                            color=0xED4245,
+                        )
+                        embed.set_footer(text=f"Yuna Security V2 • {server_name}")
+                        await owner.send(embed=embed)
+                        actions_taken.append("alert_owner_embed")
+                except Exception as e:
+                    logger.warning("[V2Containment] Failed to DM owner during escalation: %s", e)
+        else:
+            logger.info("[V2Containment] Escalation alert DM debounced for guild %s actor %s (last sent %.1fs ago)", guild.id, actor.id, now - last_dm_time)
 
         return actions_taken
 

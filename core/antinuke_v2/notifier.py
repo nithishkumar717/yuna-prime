@@ -595,6 +595,35 @@ class V2DMDeduplicator:
             desc = f"**{first_act}** in **{guild.name}**"
             actions_summary = f"Affected Target: **{first_target}**"
 
+        # Modern Components V2 (CV2) Card
+        cv2_view = None
+        try:
+            from discord.ui import LayoutView, Container, TextDisplay, Separator, ActionRow, Button
+            cv2_view = LayoutView(timeout=None)
+            container = Container(accent_color=0xED4245)
+            container.add_item(TextDisplay(f"### {ANIMATED_TICK} {title}"))
+            container.add_item(Separator(visible=True))
+            container.add_item(TextDisplay(
+                f"**Guild:** {guild.name} (`{guild.id}`)\n"
+                f"**Initiator:** **@{cluster.actor_name}** (`{cluster.actor_id}`)\n"
+                f"**Containment:** `{cluster.punishment}`\n"
+                f"**Reason:** `{cluster.reason or 'Unspecified Security Violation'}`"
+            ))
+            container.add_item(Separator(visible=True))
+            container.add_item(TextDisplay(f"**Violations Blocked:**\n{actions_summary}"))
+            container.add_item(TextDisplay(f"-# Incident detected at <t:{ts_int}:F> (<t:{ts_int}:R>)"))
+            container.add_item(ActionRow(
+                Button(
+                    label="Server Security Dashboard",
+                    url="https://discord.gg/YzHCx5yQXv",
+                    style=discord.ButtonStyle.link,
+                )
+            ))
+            cv2_view.add_item(container)
+        except Exception as cv2_err:
+            logger.debug("[V2DMDedup] Could not construct CV2 layout view: %s", cv2_err)
+            cv2_view = None
+
         embed = discord.Embed(
             title=f"{ANIMATED_TICK} {title}",
             description=desc,
@@ -629,7 +658,13 @@ class V2DMDeduplicator:
         # Dispatch with gentle pacing (capped at 10 recipients to respect rate limits)
         for admin in recipients[:10]:
             try:
-                await admin.send(embed=embed)
+                if cv2_view:
+                    try:
+                        await admin.send(view=cv2_view)
+                    except Exception:
+                        await admin.send(embed=embed)
+                else:
+                    await admin.send(embed=embed)
                 if self.pacing_delay > 0:
                     await asyncio.sleep(self.pacing_delay)
             except (discord.Forbidden, discord.HTTPException):

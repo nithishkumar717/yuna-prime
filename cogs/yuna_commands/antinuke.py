@@ -516,6 +516,8 @@ class Antinuke(commands.Cog):
                 pass
           except Exception:
             pass
+          # Rate-limit safety: 10-second cooldown between guild backups to prevent CPU/IO lag spikes
+          await asyncio.sleep(10.0)
     except Exception as e:
       logger.error("[Antinuke] Error during auto-backup loop: %s", e)
 

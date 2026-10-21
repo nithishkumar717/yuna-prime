@@ -49,11 +49,16 @@ class AuditStreamAntiNuke(commands.Cog):
         except Exception:
             pass
 
-        try:
-            for g in getattr(self.bot, "guilds", []):
-                v2_engine_router.coordinator.snapshot_store.snapshot_guild(g)
-        except Exception as e:
-            logger.debug("[AuditStreamAntiNuke] Baseline snapshot warm error: %s", e)
+        async def _staggered_baseline_warm():
+            try:
+                for g in getattr(self.bot, "guilds", []):
+                    # Stagger baseline snapshots with 5s pause to prevent event loop lag spikes
+                    v2_engine_router.coordinator.snapshot_store.snapshot_guild(g)
+                    await asyncio.sleep(10.0)
+            except Exception as e:
+                logger.debug("[AuditStreamAntiNuke] Staggered baseline snapshot error: %s", e)
+
+        asyncio.create_task(_staggered_baseline_warm())
 
         try:
             from core.antinuke_v2.warmer import discord_connection_warmer

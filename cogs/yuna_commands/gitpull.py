@@ -101,11 +101,12 @@ def _run_git_pull() -> tuple[bool, str, bool]:
             return False, f"Could not inspect current Git branch: {branch}", False
         if branch.strip() != GIT_BRANCH:
             return False, f"Update stopped: checked out branch is '{branch.strip() or 'unknown'}', expected '{GIT_BRANCH}'.", False
-        status_code, status = run_git_command(["status", "--porcelain", "--untracked-files=normal"], cwd=root_dir, timeout=10)
+        status_code, status = run_git_command(["status", "--porcelain", "--untracked-files=no"], cwd=root_dir, timeout=10)
         if status_code != 0:
             return False, f"Could not inspect the working tree: {status}", False
         if status.strip():
-            return False, "Update stopped: local tracked or untracked changes are present. Commit or back them up, then retry.", False
+            # If tracked files were modified locally, auto-stash them so pulling remote never fails
+            run_git_command(["stash", "save", "--include-untracked", f"auto-stash-before-pull-{int(time.time())}"], cwd=root_dir, timeout=15)
         ok, msg = ensure_git_remote_configured(root_dir)
         if not ok:
             return False, msg, False
