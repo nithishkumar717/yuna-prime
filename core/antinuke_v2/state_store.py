@@ -125,6 +125,8 @@ class GuildSecurityConfig:
         dash_key = ACTION_COL_TO_DASHBOARD_KEY.get(col_key)
         if dash_key and dash_key in self.action_thresholds:
             return self.action_thresholds[dash_key]
+        if dash_key and dash_key.lower() in self.action_thresholds:
+            return self.action_thresholds[dash_key.lower()]
 
         return 1, 10
 
@@ -140,6 +142,8 @@ class GuildSecurityConfig:
         dash_key = ACTION_COL_TO_DASHBOARD_KEY.get(col_key)
         if dash_key and dash_key in self.action_punishments:
             return self.action_punishments[dash_key]
+        if dash_key and dash_key.lower() in self.action_punishments:
+            return self.action_punishments[dash_key.lower()]
 
         return PunishmentType.BAN
 
@@ -242,24 +246,51 @@ class V2StateStore:
         cfg = self.get_guild_config(guild_id)
         col = action.lower()
         cfg.action_toggles[col] = bool(enabled)
-        dash_key = ACTION_COL_TO_DASHBOARD_KEY.get(col)
+        dash_key = ACTION_COL_TO_DASHBOARD_KEY.get(col) or next(
+            (key for key in ACTION_COL_TO_DASHBOARD_KEY.values() if key.lower() == col), None
+        )
         if dash_key:
             cfg.action_toggles[dash_key] = bool(enabled)
+            # Reuse the project's existing durable guild settings store so
+            # legacy listeners and V2 retain the same per-guild choice.
+            try:
+                from utils.settings_manager import get_guild_setting, set_guild_setting
+                actions = get_guild_setting(guild_id, "antinuke_actions", {}) or {}
+                if not isinstance(actions, dict):
+                    actions = {}
+                actions[dash_key] = bool(enabled)
+                set_guild_setting(guild_id, "antinuke_actions", actions)
+            except Exception as exc:
+                logger.warning("Could not persist Anti-Nuke action toggle for guild %s: %s", guild_id, exc)
 
     def set_threshold(self, guild_id: int, action: str, limit: int, window: int) -> None:
         """Immediately mutates RAM for an action threshold and writes through."""
         self._loaded_guilds.add(guild_id)
         cfg = self.get_guild_config(guild_id)
         cfg.action_thresholds[action.lower()] = (limit, window)
+        dash_key = ACTION_COL_TO_DASHBOARD_KEY.get(action.lower()) or next(
+            (key for key in ACTION_COL_TO_DASHBOARD_KEY.values() if key.lower() == action.lower()), None
+        )
+        if dash_key:
+            cfg.action_thresholds[dash_key] = (limit, window)
         self._dispatch_write(
             "INSERT OR REPLACE INTO limit_settings (guild_id, action_type, action_limit, time_window) VALUES (?, ?, ?, ?)",
-            (guild_id, action.lower(), limit, window)
+            (guild_id, action, limit, window)
         )
 
     def set_punishment(self, guild_id: int, action: str, punishment: PunishmentType) -> None:
         self._loaded_guilds.add(guild_id)
         cfg = self.get_guild_config(guild_id)
         cfg.action_punishments[action.lower()] = punishment
+        dash_key = ACTION_COL_TO_DASHBOARD_KEY.get(action.lower()) or next(
+            (key for key in ACTION_COL_TO_DASHBOARD_KEY.values() if key.lower() == action.lower()), None
+        )
+        if dash_key:
+            cfg.action_punishments[dash_key] = punishment
+        self._dispatch_write(
+            "INSERT OR REPLACE INTO antinuke_punishments (guild_id, action_type, punishment) VALUES (?, ?, ?)",
+            (guild_id, action, punishment.value)
+        )
 
     def add_whitelisted_user(self, guild_id: int, user_id: int, actions: Dict[str, bool]) -> None:
         """Immediately mutates RAM for whitelisted user and schedules SQLite write."""
@@ -354,6 +385,7 @@ class V2StateStore:
         cfg = self.get_guild_config(guild_id)
         try:
             async with aiosqlite.connect(self._db_path, timeout=5) as db:
+                await db.execute("CREATE TABLE IF NOT EXISTS antinuke_punishments (guild_id INTEGER NOT NULL, action_type TEXT NOT NULL, punishment TEXT NOT NULL, PRIMARY KEY (guild_id, action_type))")
                 # 1. Antinuke status
                 async with db.execute("SELECT status, log_channel FROM antinuke WHERE guild_id = ?", (guild_id,)) as cur:
                     row = await cur.fetchone()
@@ -409,6 +441,23 @@ class V2StateStore:
                         if act:
                             cfg.action_thresholds[str(act).lower()] = (int(lim), int(win))
 
+                # Per-action module switches use the existing settings store,
+                # which is also consumed by legacy Anti-Nuke listeners.
+                try:
+                    from utils.settings_manager import get_guild_setting
+                    stored_actions = get_guild_setting(guild_id, "antinuke_actions", {}) or {}
+                    if isinstance(stored_actions, dict):
+                        cfg.action_toggles.update({str(k): bool(v) for k, v in stored_actions.items()})
+                except Exception as exc:
+                    logger.debug("Could not load Anti-Nuke action toggles for guild %s: %s", guild_id, exc)
+
+                async with db.execute("SELECT action_type, punishment FROM antinuke_punishments WHERE guild_id = ?", (guild_id,)) as cur:
+                    for act, punishment in await cur.fetchall():
+                        try:
+                            cfg.action_punishments[str(act).lower()] = PunishmentType(str(punishment).lower())
+                        except ValueError:
+                            logger.warning("Ignoring invalid Anti-Nuke punishment %r for guild %s", punishment, guild_id)
+
                 # 7. New bots on high-vigilance probation
                 try:
                     await db.execute("""
@@ -443,6 +492,7 @@ class V2StateStore:
         t0 = time.perf_counter()
         try:
             async with aiosqlite.connect(self._db_path, timeout=10) as db:
+                await db.execute("CREATE TABLE IF NOT EXISTS antinuke_punishments (guild_id INTEGER NOT NULL, action_type TEXT NOT NULL, punishment TEXT NOT NULL, PRIMARY KEY (guild_id, action_type))")
                 # 1. Antinuke status
                 try:
                     async with db.execute("SELECT guild_id, status, log_channel FROM antinuke") as cur:
@@ -523,6 +573,25 @@ class V2StateStore:
                 except Exception as e:
                     logger.debug("[V2State] warm_load limit_settings note: %s", e)
 
+                try:
+                    async with db.execute("SELECT guild_id, action_type, punishment FROM antinuke_punishments") as cur:
+                        for gid, act, punishment in await cur.fetchall():
+                            try:
+                                self.get_guild_config(int(gid)).action_punishments[str(act).lower()] = PunishmentType(str(punishment).lower())
+                            except (TypeError, ValueError):
+                                logger.warning("Ignoring invalid Anti-Nuke punishment %r for guild %s", punishment, gid)
+                except Exception as e:
+                    logger.debug("[V2State] warm_load antinuke_punishments note: %s", e)
+
+                try:
+                    from utils.settings_manager import get_guild_setting
+                    for gid in list(self._guilds):
+                        toggles = get_guild_setting(gid, "antinuke_actions", {}) or {}
+                        if isinstance(toggles, dict):
+                            self.get_guild_config(gid).action_toggles.update({str(k): bool(v) for k, v in toggles.items()})
+                except Exception as e:
+                    logger.debug("[V2State] warm_load action toggles note: %s", e)
+
                 # 7. New bots on high-vigilance probation
                 try:
                     await db.execute("""
@@ -563,6 +632,8 @@ class V2StateStore:
     async def _execute_write(self, query: str, params: tuple) -> None:
         try:
             async with aiosqlite.connect(self._db_path, timeout=5) as db:
+                if "antinuke_punishments" in query:
+                    await db.execute("CREATE TABLE IF NOT EXISTS antinuke_punishments (guild_id INTEGER NOT NULL, action_type TEXT NOT NULL, punishment TEXT NOT NULL, PRIMARY KEY (guild_id, action_type))")
                 await db.execute(query, params)
                 await db.commit()
         except Exception as e:

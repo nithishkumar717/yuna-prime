@@ -518,7 +518,7 @@ def handle_raw_gateway_audit_entry(guild: discord.Guild, data: Dict[str, Any]) -
             # 2. ACCURATE RECOVERY ACCORDING TO STANDARDS (Post-Containment)
             # Execute channel/role recovery asynchronously only AFTER the offender is banned from Discord,
             # eliminating re-deletion race conditions and ensuring channel 429 rate limits NEVER delay future bans.
-            if res.success:
+            if res.is_containment_executed:
                 loop.create_task(_direct_recovery(containment_success=True))
 
             # Non-blocking async notifier dispatch
@@ -549,8 +549,8 @@ def handle_raw_gateway_audit_entry(guild: discord.Guild, data: Dict[str, Any]) -
             coordinator.schedule_baseline_refresh(guild, delay=30.0)
 
         res = ContainmentResult(
-            success=True,
-            punishment=PunishmentType.BAN,
+            success=False,
+            punishment=decision.punishment or PunishmentType.BAN,
             actor_id=user_id,
             guild_id=guild.id,
             error_code=f"NON_PUNISH_{decision.action.value.upper()}",

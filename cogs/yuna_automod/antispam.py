@@ -107,7 +107,7 @@ class AntiSpam(commands.Cog):
 
     async def is_bot_spam_enabled(self, guild_id):
         async with aiosqlite.connect("db/automod.db") as db:
-            await db.execute("CREATE TABLE IF NOT EXISTS bot_spam_protection (guild_id TEXT PRIMARY KEY, enabled BOOLEAN DEFAULT 1)")
+            await db.execute("CREATE TABLE IF NOT EXISTS bot_spam_protection (guild_id TEXT PRIMARY KEY, enabled BOOLEAN DEFAULT 0)")
             await db.commit()
             cursor = await db.execute("SELECT enabled FROM bot_spam_protection WHERE guild_id = ?", (str(guild_id),))
             row = await cursor.fetchone()

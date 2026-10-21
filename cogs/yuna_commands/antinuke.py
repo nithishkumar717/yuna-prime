@@ -537,26 +537,30 @@ class Antinuke(commands.Cog):
   async def configure_prime_branding(self, guild):
     """Create or update the single Yuna Prime security role and bot nickname."""
     guild_id = guild.id
+    LUXURY_ORANGE_GOLD = discord.Colour(0xE5A65E)
     role = discord.utils.get(guild.roles, name="Yuna Prime")
+    if role is None:
+      role = discord.utils.get(guild.roles, name="yuna prime")
     if role is None:
       legacy = [r for r in guild.roles if r.name in ("Yuna Supreme™", "Yuna Supreme")]
       role = max(legacy, key=lambda r: r.position) if legacy else None
     try:
       if role is None:
         role = await guild.create_role(
-          name="Yuna Prime", color=discord.Colour(0xD4A017),
+          name="Yuna Prime", color=LUXURY_ORANGE_GOLD,
           hoist=False, mentionable=False, reason="Anti-Nuke branding setup"
         )
-      elif role.name != "Yuna Prime" or role.color.value != 0xD4A017:
-        await role.edit(name="Yuna Prime", colour=discord.Colour(0xD4A017), reason="Anti-Nuke branding setup")
-      if role not in guild.me.roles:
+      elif role.name != "Yuna Prime" or role.color.value != 0xE5A65E:
+        await role.edit(name="Yuna Prime", colour=LUXURY_ORANGE_GOLD, reason="Anti-Nuke branding setup")
+      if guild.me and role not in guild.me.roles:
         await guild.me.add_roles(role, reason="Anti-Nuke branding setup")
     except discord.Forbidden as exc:
       logger.warning("Cannot configure Yuna Prime role in guild %s (permissions/hierarchy): %s", guild_id, exc)
     except discord.HTTPException as exc:
       logger.warning("Discord rejected Yuna Prime role configuration in guild %s: %s", guild_id, exc)
     try:
-      await guild.me.edit(nick="Yuna Prime", reason="Anti-Nuke branding setup")
+      if guild.me and guild.me.guild_permissions.change_nickname:
+        await guild.me.edit(nick="Yuna Prime", reason="Anti-Nuke branding setup")
     except discord.Forbidden as exc:
       logger.warning("Cannot set Yuna Prime nickname in guild %s (permission or hierarchy): %s", guild_id, exc)
     except discord.HTTPException as exc:
@@ -721,7 +725,7 @@ class Antinuke(commands.Cog):
     )
     await self.db.commit()
 
-    from utils.settings_manager import set_guild_setting
+    from utils.settings_manager import get_guild_setting, set_guild_setting
     set_guild_setting(guild_id, "antinuke", True)
     from core.cache.security_cache import security_cache
     security_cache.set_antinuke_status(guild_id, True)
@@ -734,6 +738,10 @@ class Antinuke(commands.Cog):
       "antiIntegration": True, "antiMemberUpdate": True, "antiPrune": True,
       "antiDangerousPermissions": True
     }
+    previous_actions = get_guild_setting(guild_id, "antinuke_actions", {}) or {}
+    if not isinstance(previous_actions, dict):
+      previous_actions = {}
+    all_actions.update({key: bool(enabled) for key, enabled in previous_actions.items() if key in all_actions})
     set_guild_setting(guild_id, "antinuke_actions", all_actions)
     security_cache.set_all_actions(guild_id, all_actions)
 
@@ -742,6 +750,7 @@ class Antinuke(commands.Cog):
       config = v2_engine_router.coordinator.state_store.get_guild_config(guild_id)
       config.antinuke_enabled = True
       config.log_channel_id = log_channel_id
+      config.action_toggles.update(all_actions)
     except Exception:
       pass
 
@@ -766,7 +775,7 @@ class Antinuke(commands.Cog):
   @commands.max_concurrency(1, per=commands.BucketType.default, wait=False)
   @commands.guild_only()
   @commands.has_permissions(administrator=True)
-  async def antinuke(self, ctx, option: str = None, target: Optional[Union[discord.Member, discord.User, discord.TextChannel, str]] = None, action: Optional[str] = None):
+  async def antinuke(self, ctx, option: str = None, target: Optional[Union[discord.Member, discord.User, discord.TextChannel, str]] = None, action: Optional[str] = None, value: Optional[str] = None):
     guild_id = ctx.guild.id
     pre=ctx.prefix
 
@@ -783,6 +792,87 @@ class Antinuke(commands.Cog):
 
     is_activated = row[0] if row else False
     current_log_channel_id = row[1] if row and len(row) > 1 else None
+
+    # Per-guild Anti-Nuke controls. Aliases intentionally accept readable names
+    # and the internal action codes used by the existing protection listeners.
+    antinuke_actions = {
+      "ban": ("antiBan", "Member bans"), "kick": ("antiKick", "Member kicks"),
+      "botadd": ("antiBotAdd", "Bot additions"), "channelcreate": ("antiChannelCreate", "Channel creation"),
+      "chcr": ("antiChannelCreate", "Channel creation"), "channel_create": ("antiChannelCreate", "Channel creation"),
+      "channeldelete": ("antiChannelDelete", "Channel deletion"), "chdl": ("antiChannelDelete", "Channel deletion"),
+      "channelupdate": ("antiChannelUpdate", "Channel updates"), "chup": ("antiChannelUpdate", "Channel updates"),
+      "rolecreate": ("antiRoleCreate", "Role creation"), "rlcr": ("antiRoleCreate", "Role creation"),
+      "roledelete": ("antiRoleDelete", "Role deletion"), "rldl": ("antiRoleDelete", "Role deletion"),
+      "roleupdate": ("antiRoleUpdate", "Role updates"), "rlup": ("antiRoleUpdate", "Role updates"),
+      "webhook": ("antiWebhook", "Webhook changes"), "mngweb": ("antiWebhook", "Webhook changes"),
+      "everyone": ("antiEveryoneMention", "@everyone/@here mentions"), "everyonemention": ("antiEveryoneMention", "@everyone/@here mentions"),
+      "serverupdate": ("antiGuildUpdate", "Server changes"), "serverup": ("antiGuildUpdate", "Server changes"),
+      "integration": ("antiIntegration", "Integration changes"), "memberupdate": ("antiMemberUpdate", "Dangerous member role updates"), "memup": ("antiMemberUpdate", "Dangerous member role updates"),
+      "prune": ("antiPrune", "Member pruning"), "dangerouspermissions": ("antiDangerousPermissions", "Dangerous permission grants"), "mngstemo": ("antiDangerousPermissions", "Dangerous permission grants"),
+    }
+
+    if option and option.lower() in ("config", "configure", "settings"):
+      from core.cache.security_cache import security_cache
+      from core.antinuke_v2.router import v2_engine_router
+      store = getattr(self.bot, "antinuke_v2_state_store", None) or v2_engine_router.coordinator.state_store
+      if target is None:
+        current = security_cache.get_antinuke_actions(guild_id)
+        seen = set()
+        lines = []
+        for name, (key, label) in antinuke_actions.items():
+          if key in seen:
+            continue
+          seen.add(key)
+          lines.append(f"• **{label}:** {'Enabled' if current.get(key, True) else 'Disabled'} — `{pre}antinuke config {name} <on|off>`")
+        embed = discord.Embed(title="Anti-Nuke Protection Configuration", description=("Configure each protection independently. Changes apply to this server and persist across restarts.\n\n" + "\n".join(lines) + f"\n\n**Rate limit:** `{pre}antinuke limit <action> <count> <seconds>`\nExample: `{pre}antinuke limit ban 2 10`\n**Punishment:** `{pre}antinuke punishment <action> <ban|kick|demote|timeout>`"), color=0xD4A017)
+        return await ctx.send(embed=embed)
+      action_name = str(target).strip().lower().replace("-", "").replace(" ", "")
+      mapped = antinuke_actions.get(action_name)
+      if not mapped or (action or "").lower() not in ("on", "off", "enable", "disable", "true", "false"):
+        return await ctx.send(f"Invalid configuration. Use `{pre}antinuke config` to list options, then `{pre}antinuke config <action> <on|off>`. ")
+      key, label = mapped
+      enabled = (action or "").lower() in ("on", "enable", "true")
+      await store.load_guild_from_db(guild_id)
+      security_cache.set_action_status(guild_id, key, enabled)
+      # Keep the V2 policy cache in sync; its decisions are independent of legacy listeners.
+      store.set_action_toggle(guild_id, key, enabled)
+      await ctx.send(embed=discord.Embed(description=f"{label} protection is now **{'enabled' if enabled else 'disabled'}** for this server.", color=0xD4A017))
+      return
+
+    elif option and option.lower() in ("limit", "threshold"):
+      from core.antinuke_v2.router import v2_engine_router
+      if not target or not action or not value:
+        return await ctx.send(f"Usage: `{pre}antinuke limit <action> <count> <seconds>`")
+      normalized = str(target).lower().replace("-", "").replace(" ", "")
+      mapped = antinuke_actions.get(normalized)
+      try:
+        count, seconds = int(action), int(value)
+      except (TypeError, ValueError):
+        count, seconds = 0, 0
+      if not mapped or not (1 <= count <= 100) or not (1 <= seconds <= 3600):
+        return await ctx.send(f"Choose a valid action, count (1–100), and window (1–3600 seconds). Example: `{pre}antinuke limit ban 2 10`.")
+      store = getattr(self.bot, "antinuke_v2_state_store", None) or v2_engine_router.coordinator.state_store
+      await store.load_guild_from_db(guild_id)
+      store.set_threshold(guild_id, mapped[0], count, seconds)
+      await ctx.send(embed=discord.Embed(description=f"Anti-Nuke limit for **{mapped[1]}** set to **{count} action(s) per {seconds} second(s)**.", color=0xD4A017))
+      return
+
+    elif option and option.lower() in ("punishment", "punish"):
+      from core.antinuke_v2.models import PunishmentType
+      from core.antinuke_v2.router import v2_engine_router
+      mapped = antinuke_actions.get(str(target).lower().replace("-", "").replace(" ", "")) if target else None
+      punishment_name = str(action or "").lower()
+      try:
+        punishment = PunishmentType(punishment_name)
+      except ValueError:
+        punishment = None
+      if not mapped or punishment is None:
+        return await ctx.send(f"Usage: `{pre}antinuke punishment <action> <ban|kick|demote|timeout>`")
+      store = getattr(self.bot, "antinuke_v2_state_store", None) or v2_engine_router.coordinator.state_store
+      await store.load_guild_from_db(guild_id)
+      store.set_punishment(guild_id, mapped[0], punishment)
+      await ctx.send(embed=discord.Embed(description=f"Anti-Nuke punishment for **{mapped[1]}** set to **{punishment.value}**.", color=0xD4A017))
+      return
 
     if option is None:
       embed = discord.Embed(

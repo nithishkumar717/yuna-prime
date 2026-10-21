@@ -5,6 +5,7 @@ import shutil
 import threading
 import atexit
 import time
+import uuid
 from typing import Any, Dict, Optional
 from utils.config import DEFAULT_PREFIX, MONGO_DATABASE_NAME
 
@@ -328,28 +329,57 @@ class SettingsManager:
             for doc in self.mongo_collection.find():
                 gid = str(doc.get("guild_id", ""))
                 if gid:
-                    if gid not in self._data["guilds"]:
-                        self._data["guilds"][gid] = DEFAULT_GUILD_SETTINGS.copy()
-                    
-                    # Merge all document fields into local RAM cache (ignoring internal Mongo _id)
-                    for k, v in doc.items():
-                        if k not in ("_id", "guild_id"):
-                            self._data["guilds"][gid][k] = v
+                    with self._save_lock:
+                        if gid not in self._data["guilds"]:
+                            self._data["guilds"][gid] = DEFAULT_GUILD_SETTINGS.copy()
+                        # Merge Mongo values without racing a disk snapshot.
+                        for k, v in doc.items():
+                            if k not in ("_id", "guild_id"):
+                                self._data["guilds"][gid][k] = v
         except Exception as e:
             print(f"[SETTINGS MONGO LOAD WARNING] {e}")
 
     def _save_to_disk_sync(self):
-        """Atomic write to local disk cache on VPS for instant offline recovery."""
+        """Atomically write the local cache, tolerating brief Windows file locks."""
+        temp_path = None
         try:
-            os.makedirs(os.path.dirname(self.file_path), exist_ok=True)
-            temp_path = f"{self.file_path}.tmp"
-            with open(temp_path, "w", encoding="utf-8") as f:
-                json.dump(self._data, f, indent=2)
-            if os.path.exists(self.file_path):
-                shutil.copy2(self.file_path, self.backup_path)
-            os.replace(temp_path, self.file_path)
+            # RLock serializes threads in this process; unique temp names also
+            # prevent two bot processes from overwriting each other's staging file.
+            with self._save_lock:
+                parent = os.path.dirname(self.file_path)
+                os.makedirs(parent, exist_ok=True)
+                temp_path = f"{self.file_path}.{os.getpid()}.{threading.get_ident()}.{uuid.uuid4().hex}.tmp"
+                with open(temp_path, "w", encoding="utf-8") as f:
+                    json.dump(self._data, f, indent=2)
+                    f.flush()
+                    os.fsync(f.fileno())
+
+                if os.path.exists(self.file_path):
+                    try:
+                        shutil.copy2(self.file_path, self.backup_path)
+                    except OSError as backup_error:
+                        # A backup lock should not block committing the current settings.
+                        print(f"[SETTINGS BACKUP WARNING] {backup_error}")
+
+                last_error = None
+                for attempt in range(6):
+                    try:
+                        os.replace(temp_path, self.file_path)
+                        return True
+                    except PermissionError as exc:
+                        last_error = exc
+                        if attempt < 5:
+                            time.sleep(0.05 * (2 ** attempt))
+                raise last_error
         except Exception as e:
             print(f"[SETTINGS DISK SAVE WARNING] {e}")
+            return False
+        finally:
+            if temp_path and os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except OSError:
+                    pass
 
     def _save_guilds_sync(self, guild_ids: list[str]):
         """Upserts guild documents into MongoDB Atlas in a single fast bulk operation and updates local disk cache."""
@@ -358,7 +388,8 @@ class SettingsManager:
         try:
             with self._save_lock:
                 # 1. Update local disk cache immediately
-                self._save_to_disk_sync()
+                if not self._save_to_disk_sync():
+                    raise OSError("local settings disk save failed")
 
                 # 2. Bulk upsert to MongoDB Atlas
                 if self.mongo_collection is not None:
@@ -443,25 +474,29 @@ class SettingsManager:
     def set_guild_setting(self, guild_id: int | str, key: str, value: Any):
         """Sets a guild setting in memory instantly and schedules background non-blocking persistence."""
         gid = str(guild_id)
-        if gid not in self._data["guilds"]:
-            self._data["guilds"][gid] = DEFAULT_GUILD_SETTINGS.copy()
-        self._data["guilds"][gid][key] = value
+        with self._save_lock:
+            if gid not in self._data["guilds"]:
+                self._data["guilds"][gid] = DEFAULT_GUILD_SETTINGS.copy()
+            self._data["guilds"][gid][key] = value
         self.save_guild_to_mongo(gid)
 
     def update_guild_settings(self, guild_id: int | str, updates: Dict[str, Any]):
         """Batch updates multiple settings for a guild and schedules background non-blocking persistence."""
         gid = str(guild_id)
-        if gid not in self._data["guilds"]:
-            self._data["guilds"][gid] = DEFAULT_GUILD_SETTINGS.copy()
-        self._data["guilds"][gid].update(updates)
+        with self._save_lock:
+            if gid not in self._data["guilds"]:
+                self._data["guilds"][gid] = DEFAULT_GUILD_SETTINGS.copy()
+            self._data["guilds"][gid].update(updates)
         self.save_guild_to_mongo(gid)
 
     def delete_guild(self, guild_id: int | str):
         """Removes a guild from local settings when bot leaves guild."""
         gid = str(guild_id)
-        if gid in self._data["guilds"]:
+        with self._save_lock:
+            if gid not in self._data["guilds"]:
+                return
             del self._data["guilds"][gid]
-            self.schedule_save()
+        self.schedule_save()
 
     # ================= BOT GLOBAL SETTINGS API =================
 
@@ -471,7 +506,8 @@ class SettingsManager:
 
     def set_bot_setting(self, key: str, value: Any):
         """Sets a global bot setting and persists to file."""
-        self._data["bot"][key] = value
+        with self._save_lock:
+            self._data["bot"][key] = value
         self.schedule_save()
 
     def sync_all_from_databases(self) -> Dict[str, int]:

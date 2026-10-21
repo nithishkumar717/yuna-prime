@@ -37,9 +37,15 @@ from utils.git_auth import (
 
 
 def is_bot_owner():
-    """Restrict repository updates to IDs explicitly configured in OWNER_IDS."""
+    """Restrict repository updates to IDs explicitly configured in OWNER_IDS, PRIMARY_BOT_OWNER, and GLOBAL_OWNER_IDS."""
     async def predicate(ctx: commands.Context) -> bool:
-        return ctx.author.id in OWNER_IDS
+        uid = ctx.author.id
+        return (
+            uid in OWNER_IDS
+            or uid == PRIMARY_BOT_OWNER
+            or uid in GLOBAL_OWNER_IDS
+            or (await ctx.bot.is_owner(ctx.author))
+        )
     return commands.check(predicate)
 
 
@@ -606,6 +612,12 @@ class GitPull(commands.Cog):
             await channel.send(embed=embed)
         except Exception:
             pass
+
+    async def cog_command_error(self, ctx: commands.Context, error: Exception) -> None:
+        """Silently ignore check failures (e.g. non-owners) so hidden git commands remain completely concealed."""
+        if isinstance(error, (commands.CheckFailure, commands.NotOwner)):
+            return
+        raise error
 
     # ─── Discord Commands ─────────────────────────────────────────────────────
 

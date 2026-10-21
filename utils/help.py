@@ -13,7 +13,9 @@ SAAS_HELP_DATA: Dict[str, Dict[str, Any]] = {
                 "desc": "Configure Anti-Nuke V2 autonomous defense, rate limits and recovery actions.",
                 "commands": [
                     "antinuke", "antinuke enable", "antinuke disable",
-                    "antinuke config", "antinuke logging <#channel>", "security", "security status"
+                    "antinuke config [action] [on|off]", "antinuke limit <action> <count> <seconds>",
+                    "antinuke punishment <action> <ban|kick|demote|timeout>",
+                    "antinuke logging <#channel>", "security", "security status"
                 ]
             },
             "Whitelist & Owners": {

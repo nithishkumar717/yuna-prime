@@ -838,7 +838,7 @@ class AutoModControlView(discord.ui.View):
 
         self.bot_spam_enabled = not self.bot_spam_enabled
         async with aiosqlite.connect("db/automod.db") as db:
-            await db.execute("CREATE TABLE IF NOT EXISTS bot_spam_protection (guild_id TEXT PRIMARY KEY, enabled BOOLEAN DEFAULT 1)")
+            await db.execute("CREATE TABLE IF NOT EXISTS bot_spam_protection (guild_id TEXT PRIMARY KEY, enabled BOOLEAN DEFAULT 0)")
             val = 1 if self.bot_spam_enabled else 0
             await db.execute("INSERT OR REPLACE INTO bot_spam_protection (guild_id, enabled) VALUES (?, ?)", (str(self.guild_id), val))
             await db.commit()
@@ -1542,7 +1542,7 @@ class Automod(commands.Cog):
     async def blockspamraid(self, ctx: commands.Context, option: str = None):
         guild_id = ctx.guild.id
         async with aiosqlite.connect("db/automod.db") as db:
-            await db.execute("CREATE TABLE IF NOT EXISTS bot_spam_protection (guild_id TEXT PRIMARY KEY, enabled BOOLEAN DEFAULT 1)")
+            await db.execute("CREATE TABLE IF NOT EXISTS bot_spam_protection (guild_id TEXT PRIMARY KEY, enabled BOOLEAN DEFAULT 0)")
             await db.commit()
 
             if option is None:

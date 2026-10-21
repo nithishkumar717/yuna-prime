@@ -1100,7 +1100,7 @@ class Verification (commands .Cog ):
                         verified_role_id INTEGER NOT NULL,
                         log_channel_id INTEGER,
                         verification_method TEXT DEFAULT 'both',
-                        enabled BOOLEAN DEFAULT 1,
+                        enabled BOOLEAN DEFAULT 0,
                         created_at TEXT DEFAULT CURRENT_TIMESTAMP
                     )
                 """)

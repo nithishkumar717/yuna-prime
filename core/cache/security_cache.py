@@ -538,6 +538,11 @@ class SecurityStateCache:
         self._extraowners[gid].add(oid)
         self._loaded_guilds.add(gid)
         settings.set_guild_setting(guild_id, "extraowner", str(owner_id))
+        try:
+            from core.antinuke_v2.router import v2_engine_router
+            v2_engine_router.coordinator.state_store.get_guild_config(gid).extra_owners.add(oid)
+        except Exception:
+            pass
 
     def remove_extra_owner(self, guild_id: int | str, owner_id: Optional[int | str] = None):
         """Removes an extra owner from memory cache."""
@@ -551,6 +556,15 @@ class SecurityStateCache:
             else:
                 self._extraowners[gid].clear()
         settings.set_guild_setting(guild_id, "extraowner", None)
+        try:
+            from core.antinuke_v2.router import v2_engine_router
+            cfg = v2_engine_router.coordinator.state_store.get_guild_config(gid)
+            if owner_id is not None:
+                cfg.extra_owners.discard(int(owner_id))
+            else:
+                cfg.extra_owners.clear()
+        except Exception:
+            pass
 
     def set_whitelist_permission(self, guild_id: int | str, user_id: int | str, action_col: str, enabled: bool):
         """Sets a granular whitelist permission in memory cache and settings."""
@@ -562,6 +576,14 @@ class SecurityStateCache:
             self._whitelists[gid][uid] = {}
         self._whitelists[gid][uid][action_col] = enabled
         self._loaded_guilds.add(gid)
+        try:
+            from core.antinuke_v2.router import v2_engine_router
+            cfg = v2_engine_router.coordinator.state_store.get_guild_config(gid)
+            if uid not in cfg.whitelisted_users:
+                cfg.whitelisted_users[uid] = {}
+            cfg.whitelisted_users[uid][action_col] = bool(enabled)
+        except Exception:
+            pass
         # Sync to settings_manager
         current_wl = settings.get_guild_setting(gid, "whitelist", default=[]) or []
         if str(uid) not in [str(u) for u in current_wl]:

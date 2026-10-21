@@ -108,8 +108,17 @@ class DetectionCoordinator:
         target_entity: Optional[Any] = None,
     ) -> None:
         """Dispatches ultra-fast asset recovery / reversion without blocking hot paths."""
-        if not guild or (not target_id and not target_entity and action_code not in ("serverup", "vanity")):
+        if not guild or not containment_success:
             return
+        if not target_id and not target_entity and action_code not in ("serverup", "vanity"):
+            return
+
+        # STRICT GUARD: If the incident was authorized (server owner, co-owner, whitelisted user), NEVER recover!
+        if hasattr(self, "incident_tracker"):
+            inc = self.incident_tracker.get_incident(guild.id, action_code, target_id)
+            if inc and inc.containment_result and not inc.containment_result.is_containment_executed:
+                logger.info("[Recovery] Skipping recovery for %s in guild %s because action was authorized by immune/whitelisted user", action_code, guild.id)
+                return
 
         try:
             if action_code == "chcr":
@@ -428,8 +437,8 @@ class DetectionCoordinator:
                 self.schedule_baseline_refresh(guild, delay=30.0)
 
             result = ContainmentResult(
-                success=True,
-                punishment=PunishmentType.BAN,
+                success=False,
+                punishment=decision.punishment or PunishmentType.BAN,
                 actor_id=actor_id,
                 guild_id=guild_id,
                 error_code=f"NON_PUNISH_{decision.action.value.upper()}",
@@ -467,12 +476,12 @@ class DetectionCoordinator:
                 pass
 
         # 1. Adaptive Yield: Wait ONLY if stream is healthy (max 15ms micro-yield)
-        adaptive_wait = self.stream_health.get_adaptive_wait(guild_id, healthy_wait=0.015)
+        adaptive_wait = self.stream_health.get_adaptive_wait(guild_id, healthy_wait=0.010)
         if adaptive_wait > 0.0:
             existing_inc = self.incident_tracker.get_incident(guild_id, action_code, target_id)
             if existing_inc and existing_inc.is_claimed:
                 res = await existing_inc.wait_for_containment(timeout=adaptive_wait)
-                if res and res.success and action_code in ("chdl", "rldl"):
+                if res and res.is_containment_executed and action_code in ("chdl", "rldl"):
                     res_type = "channel" if action_code == "chdl" else "role"
                     if not self.snapshot_store.get_restored_id(guild_id, res_type, target_id):
                         await self._execute_recovery(
@@ -486,7 +495,7 @@ class DetectionCoordinator:
         existing_inc = self.incident_tracker.get_incident(guild_id, action_code, target_id)
         if existing_inc and existing_inc.is_claimed:
             res = await existing_inc.wait_for_containment(timeout=0.5)
-            if res and res.success and action_code in ("chdl", "rldl"):
+            if res and res.is_containment_executed and action_code in ("chdl", "rldl"):
                 res_type = "channel" if action_code == "chdl" else "role"
                 if not self.snapshot_store.get_restored_id(guild_id, res_type, target_id):
                     await self._execute_recovery(
@@ -541,7 +550,7 @@ class DetectionCoordinator:
         # Check if authoritative fast_gateway or audit_stream preempted containment
         if incident.claimed_by in ("fast_gateway", "audit_stream"):
             res = await incident.wait_for_containment(timeout=0.5)
-            if res and res.success:
+            if res and res.is_containment_executed:
                 if action_code in ("chdl", "rldl"):
                     res_type = "channel" if action_code == "chdl" else "role"
                     if not self.snapshot_store.get_restored_id(guild_id, res_type, target_id):
@@ -748,8 +757,8 @@ class DetectionCoordinator:
                 self.schedule_baseline_refresh(guild, delay=30.0)
 
             result = ContainmentResult(
-                success=True,
-                punishment=PunishmentType.BAN,
+                success=False,
+                punishment=decision.punishment or PunishmentType.BAN,
                 actor_id=resolved_actor.id,
                 guild_id=guild_id,
                 error_code=f"NON_PUNISH_{decision.action.value.upper()}",

@@ -43,6 +43,15 @@ class ContainmentResult:
     ratelimit_wait_ms: float = 0.0
     http_rtt_ms: float = 0.0
 
+    @property
+    def is_containment_executed(self) -> bool:
+        """Whether punishment was actually executed against an unauthorized offender."""
+        if not self.success:
+            return False
+        if self.error_code and (self.error_code.startswith("NON_PUNISH") or self.error_code.startswith("DRY_RUN")):
+            return False
+        return True
+
 
 DANGEROUS_PERMISSIONS = {
     "administrator",
@@ -457,74 +466,63 @@ class V2Neutralizer:
                         if mock_wait is not None and isinstance(mock_wait, (int, float)):
                             attempt_ratelimit_wait_ms += float(mock_wait)
 
-            # 2. Intercept any internal asyncio.sleep in discord.py for 429 retries
-            orig_sleep = asyncio.sleep
-            async def monitored_sleep(delay, *args, **kwargs):
-                nonlocal attempt_ratelimit_wait_ms
-                attempt_ratelimit_wait_ms += float(delay) * 1000.0
-                return await orig_sleep(delay, *args, **kwargs)
-
             t_call_start = time.perf_counter()
             try:
-                asyncio.sleep = monitored_sleep
-                try:
-                    # Primary punishment dispatch
-                    if punishment == PunishmentType.BAN:
-                        # Ultra-Fast Raw REST Ban via TurboBanClient (TCP_NODELAY, keep-alive TLS socket)
-                        http = getattr(guild, "_state", None) and getattr(guild._state, "http", None)
-                        tok = getattr(http, "token", None) if http else None
-                        ban_fn = getattr(http, "ban", None) if http else None
-                        is_mock_ban = ban_fn is not None and (
-                            hasattr(ban_fn, "mock") or hasattr(ban_fn, "assert_called") or hasattr(ban_fn, "call_count")
+                # Primary punishment dispatch
+                if punishment == PunishmentType.BAN:
+                    # Ultra-Fast Raw REST Ban via TurboBanClient (TCP_NODELAY, keep-alive TLS socket)
+                    http = getattr(guild, "_state", None) and getattr(guild._state, "http", None)
+                    tok = getattr(http, "token", None) if http else None
+                    ban_fn = getattr(http, "ban", None) if http else None
+                    is_mock_ban = ban_fn is not None and (
+                        hasattr(ban_fn, "mock") or hasattr(ban_fn, "assert_called") or hasattr(ban_fn, "call_count")
+                    )
+                    turbo_succeeded = False
+                    if tok and not is_mock_ban:
+                        if not turbo_ban_client.is_ready():
+                            await turbo_ban_client.initialize(tok)
+                        ban_ok, status_code, _ = await turbo_ban_client.raw_ban(
+                            guild_id,
+                            actor_id,
+                            reason=f"[Anti-Nuke] {reason}",
+                            token=tok,
                         )
-                        turbo_succeeded = False
-                        if tok and not is_mock_ban:
-                            if not turbo_ban_client.is_ready():
-                                await turbo_ban_client.initialize(tok)
-                            ban_ok, status_code, _ = await turbo_ban_client.raw_ban(
-                                guild_id,
-                                actor_id,
-                                reason=f"[Anti-Nuke] {reason}",
-                                token=tok,
+                        if ban_ok:
+                            turbo_succeeded = True
+                        elif status_code == 403:
+                            from unittest.mock import MagicMock
+                            raise discord.Forbidden(
+                                MagicMock(status=403, reason="Forbidden"),
+                                "Role Hierarchy / Missing Permissions"
                             )
-                            if ban_ok:
-                                turbo_succeeded = True
-                            elif status_code == 403:
-                                from unittest.mock import MagicMock
-                                raise discord.Forbidden(
-                                    MagicMock(status=403, reason="Forbidden"),
-                                    "Role Hierarchy / Missing Permissions"
-                                )
 
-                        if not turbo_succeeded:
-                            if hasattr(guild, "_state") and hasattr(guild._state, "http"):
-                                await guild._state.http.ban(actor_id, guild_id, 0, reason=f"[Anti-Nuke] {reason}")
-                            else:
-                                await guild.ban(actor, reason=f"[Anti-Nuke] {reason}", delete_message_days=0)
-                    elif punishment == PunishmentType.KICK:
-                        kick_ok = False
-                        http = getattr(guild, "_state", None) and getattr(guild._state, "http", None)
-                        tok = getattr(http, "token", None) if http else None
-                        if tok:
-                            if not turbo_ban_client.is_ready():
-                                await turbo_ban_client.initialize(tok)
-                            kick_ok, status_code, _ = await turbo_ban_client.raw_kick(guild_id, actor_id, f"[Anti-Nuke] {reason}", token=tok)
-                            if status_code == 403:
-                                from unittest.mock import MagicMock
-                                raise discord.Forbidden(MagicMock(status=403, reason="Forbidden"), "Role Hierarchy / Missing Permissions")
-                        if not kick_ok:
-                            if hasattr(guild, "_state") and hasattr(guild._state, "http"):
-                                await guild._state.http.kick(actor_id, guild_id, reason=f"[Anti-Nuke] {reason}")
-                            else:
-                                await guild.kick(actor, reason=f"[Anti-Nuke] {reason}")
-                    elif punishment == PunishmentType.TIMEOUT:
-                        timeout_until = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=28)
-                        if hasattr(actor, "timeout"):
-                            await actor.timeout(timeout_until, reason=f"[Anti-Nuke] {reason}")
-                    elif punishment == PunishmentType.DEMOTE:
-                        await self._demote_actor(guild, actor, reason)
-                finally:
-                    asyncio.sleep = orig_sleep
+                    if not turbo_succeeded:
+                        if hasattr(guild, "_state") and hasattr(guild._state, "http"):
+                            await guild._state.http.ban(actor_id, guild_id, 0, reason=f"[Anti-Nuke] {reason}")
+                        else:
+                            await guild.ban(actor, reason=f"[Anti-Nuke] {reason}", delete_message_days=0)
+                elif punishment == PunishmentType.KICK:
+                    kick_ok = False
+                    http = getattr(guild, "_state", None) and getattr(guild._state, "http", None)
+                    tok = getattr(http, "token", None) if http else None
+                    if tok:
+                        if not turbo_ban_client.is_ready():
+                            await turbo_ban_client.initialize(tok)
+                        kick_ok, status_code, _ = await turbo_ban_client.raw_kick(guild_id, actor_id, f"[Anti-Nuke] {reason}", token=tok)
+                        if status_code == 403:
+                            from unittest.mock import MagicMock
+                            raise discord.Forbidden(MagicMock(status=403, reason="Forbidden"), "Role Hierarchy / Missing Permissions")
+                    if not kick_ok:
+                        if hasattr(guild, "_state") and hasattr(guild._state, "http"):
+                            await guild._state.http.kick(actor_id, guild_id, reason=f"[Anti-Nuke] {reason}")
+                        else:
+                            await guild.kick(actor, reason=f"[Anti-Nuke] {reason}")
+                elif punishment == PunishmentType.TIMEOUT:
+                    timeout_until = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=28)
+                    if hasattr(actor, "timeout"):
+                        await actor.timeout(timeout_until, reason=f"[Anti-Nuke] {reason}")
+                elif punishment == PunishmentType.DEMOTE:
+                    await self._demote_actor(guild, actor, reason)
 
                 call_duration_ms = (time.perf_counter() - t_call_start) * 1000.0
                 http_rtt = max(0.0, call_duration_ms - attempt_ratelimit_wait_ms)

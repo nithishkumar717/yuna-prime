@@ -495,6 +495,14 @@ class SecurityAntinukeSubView(discord.ui.View):
         from core.cache.security_cache import security_cache
         security_cache.set_antinuke_status(self.guild_id, True)
 
+        # Auto branding: Role "Yuna Prime" with luxury orange gold & auto nickname
+        antinuke_cog = interaction.client.get_cog("Antinuke")
+        if antinuke_cog and hasattr(antinuke_cog, "configure_prime_branding"):
+            try:
+                await antinuke_cog.configure_prime_branding(interaction.guild)
+            except Exception:
+                pass
+
         self.update_components()
         embed = self.build_embed(interaction.guild)
         await interaction.response.edit_message(embed=embed, view=self)

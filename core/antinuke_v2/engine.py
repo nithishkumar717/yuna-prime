@@ -114,6 +114,16 @@ def evaluate_policy(
             guild_id, actor_id, action_key
         )
 
+    # 1b. Fast Global Immunity Check
+    from core.cache.security_cache import security_cache
+    if security_cache.is_immune(guild, actor):
+        return _log_and_return(
+            Decision(
+                action=DecisionAction.ALLOW,
+                reason_code="IMMUNITY_GLOBAL",
+            ),
+            guild_id, actor_id, action_key
+        )
 
     # 2. IMMUNITY: Server Owner
     owner_id = state.owner_id
@@ -121,7 +131,8 @@ def evaluate_policy(
         owner_id = getattr(guild, "owner_id", None)
         if owner_id:
             state.owner_id = owner_id
-    if actor_id == owner_id:
+    guild_owner = getattr(guild, "owner_id", None)
+    if actor_id == owner_id or (guild_owner is not None and actor_id == int(guild_owner)):
         return _log_and_return(
             Decision(
                 action=DecisionAction.ALLOW,
@@ -140,8 +151,8 @@ def evaluate_policy(
             guild_id, actor_id, action_key
         )
 
-    # 4. IMMUNITY: Extra Owner
-    if actor_id in state.extra_owners:
+    # 4. IMMUNITY: Extra Owner (Co-Owner)
+    if actor_id in state.extra_owners or security_cache.is_extra_owner(guild_id, actor_id):
         return _log_and_return(
             Decision(
                 action=DecisionAction.ALLOW,
@@ -204,7 +215,7 @@ def evaluate_policy(
             )
 
     # 9. WHITELIST: Whitelisted Bot
-    if actor_id in state.whitelisted_bots:
+    if actor_id in state.whitelisted_bots or security_cache.is_bot_whitelisted(guild_id, actor_id):
         return _log_and_return(
             Decision(
                 action=DecisionAction.ALLOW,
@@ -214,6 +225,15 @@ def evaluate_policy(
         )
 
     # 10. WHITELIST: Whitelisted User (Per-action or Full)
+    if security_cache.is_executor_allowed_sync(guild, actor, action_key) or security_cache.is_whitelisted(guild_id, actor_id):
+        return _log_and_return(
+            Decision(
+                action=DecisionAction.ALLOW,
+                reason_code="WHITELISTED_USER",
+            ),
+            guild_id, actor_id, action_key
+        )
+
     if actor_id in state.whitelisted_users:
         user_perms = state.whitelisted_users[actor_id]
         dash_key = ACTION_COL_TO_DASHBOARD_KEY.get(action_key, action_key)
